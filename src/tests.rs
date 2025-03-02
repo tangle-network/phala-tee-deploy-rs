@@ -44,7 +44,7 @@ async fn test_successful_deployment_flow() {
         .and(header("Content-Type", "application/json"))
         .and(header("x-api-key", "test_api_key"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "test-deployment",
+            "id": 123,
             "status": "pending",
             "details": {
                 "deployment_time": "2024-03-14T12:00:00Z"
@@ -58,7 +58,7 @@ async fn test_successful_deployment_flow() {
     let client = TeeClient::new(config).unwrap();
     let result = client.deploy().await.unwrap();
 
-    assert_eq!(result.id, "test-deployment");
+    assert_eq!(result.id, 123);
     assert_eq!(result.status, "pending");
 }
 
@@ -216,7 +216,7 @@ async fn test_deploy_with_config() {
         .and(header("Content-Type", "application/json"))
         .and(header("x-api-key", "test_api_key"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "custom-deployment-123",
+            "id": 123,
             "status": "creating",
             "details": {
                 "creation_time": "2024-03-14T12:00:00Z"
@@ -252,7 +252,7 @@ async fn test_deploy_with_config() {
         .await
         .unwrap();
 
-    assert_eq!(result.id, "custom-deployment-123");
+    assert_eq!(result.id, 123);
     assert_eq!(result.status, "creating");
     assert!(result.details.is_some());
 }

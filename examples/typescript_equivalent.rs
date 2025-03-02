@@ -1,83 +1,70 @@
-use phala_tee_deploy_rs::{DeploymentConfig, Result, TeeClient};
+use phala_tee_deploy_rs::{DeploymentConfig, Error, Result, TeeClient};
 use serde_json::json;
 use std::collections::HashMap;
 use std::env;
 
+/// This example demonstrates a step-by-step deployment process that mirrors
+/// the TypeScript workflow, providing full control over each phase.
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load environment variables
+    // ===== SETUP =====
     dotenv::dotenv().ok();
 
-    // Get API key and endpoint from environment
-    let api_key = env::var("PHALA_CLOUD_API_KEY").expect("PHALA_CLOUD_API_KEY must be set");
-    let api_endpoint = env::var("PHALA_CLOUD_API_ENDPOINT")
-        .unwrap_or_else(|_| "https://cloud-api.phala.network/api/v1".to_string());
-
-    // Create a minimal config for API access
-    let config = DeploymentConfig {
-        api_key,
-        api_url: api_endpoint,
+    // Create a minimal client with just the API credentials
+    let client = TeeClient::new(DeploymentConfig {
+        api_key: env::var("PHALA_CLOUD_API_KEY").expect("API key required"),
+        api_url: env::var("PHALA_CLOUD_API_ENDPOINT")
+            .unwrap_or_else(|_| "https://cloud-api.phala.network/api/v1".to_string()),
         docker_compose: String::new(),
         env_vars: HashMap::new(),
         teepod_id: 0,
         image: String::new(),
         vm_config: None,
-    };
+    })?;
 
-    let client = TeeClient::new(config)?;
+    // ===== PHASE 1: SELECT TEEPOD =====
+    println!("1. Discovering available TEEPods...");
+    let teepods = client.get_available_teepods().await?;
 
-    // Step 1: Get available TEEPods
-    println!("Fetching available TEEPods...");
-    let teepods_response = client.get_available_teepods().await?;
-
-    if teepods_response["nodes"]
+    // Ensure we have TEEPods available
+    if teepods["nodes"]
         .as_array()
         .map_or(true, |nodes| nodes.is_empty())
     {
-        println!("No available TEEPods found");
-        return Ok(());
+        return Err(Error::Api {
+            status_code: 400,
+            message: "No available TEEPods found".into(),
+        });
     }
 
-    let node = &teepods_response["nodes"][0];
+    // Select the first available TEEPod and image
+    let node = &teepods["nodes"][0];
     let teepod_id = node["teepod_id"].as_u64().expect("Invalid TEEPod ID");
     let image = node["images"][0]["name"]
         .as_str()
-        .expect("Invalid image name")
-        .to_string();
+        .expect("Invalid image name");
+    println!("   Selected TEEPod ID: {}, Image: {}", teepod_id, image);
 
-    println!("Using TEEPod ID: {}, Image: {}", teepod_id, image);
+    // ===== PHASE 2: PREPARE CONFIGURATION =====
+    println!("2. Preparing VM configuration...");
 
     // Define Docker compose content
     let docker_compose = r#"
 services:
-  demo:
-    image: leechael/bun-webserver-demo:latest
-    container_name: demo
+  app:
+    image: leechael/phala-cloud-nextjs-starter:latest
     ports:
       - "3000:3000"
     volumes:
       - /var/run/tappd.sock:/var/run/tappd.sock
 "#;
 
-    // Optional pre-launch script
-    let pre_launch_script = r#"
-#!/bin/bash
-echo "--------------------------------"
-echo "Hello, DSTACK!"
-echo "--------------------------------"
-echo
-env
-echo
-echo "--------------------------------"
-"#;
-
     // Create VM configuration
     let vm_config = json!({
-        "name": "test",
+        "name": "test-deployment",
         "compose_manifest": {
             "docker_compose_file": docker_compose,
-            "pre_launch_script": pre_launch_script,
-            "name": "test"
+            "name": "test-deployment"
         },
         "vcpu": 1,
         "memory": 1024,
@@ -86,30 +73,29 @@ echo "--------------------------------"
         "image": image
     });
 
-    // Step 2: Get encryption public key
-    println!("Getting encryption public key...");
+    // ===== PHASE 3: OBTAIN ENCRYPTION KEYS =====
+    println!("3. Obtaining encryption public key...");
     let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
+    let pubkey = pubkey_response["app_env_encrypt_pubkey"].as_str().unwrap();
+    let salt = pubkey_response["app_id_salt"].as_str().unwrap();
 
-    // Step 3: Prepare environment variables to encrypt
-    let env_vars = vec![("FOO".to_string(), "BAR".to_string())];
+    // ===== PHASE 4: PREPARE AND ENCRYPT ENVIRONMENT =====
+    println!("4. Preparing environment variables...");
+    let env_vars = vec![
+        ("API_KEY".to_string(), "secret-value".to_string()),
+        ("DEBUG".to_string(), "true".to_string()),
+    ];
 
-    // Step 4: Deploy with encrypted environment variables
-    println!("Deploying VM...");
+    // ===== PHASE 5: DEPLOY =====
+    println!("5. Deploying to TEE environment...");
     let deployment = client
-        .deploy_with_config_do_encrypt(
-            vm_config,
-            &env_vars,
-            pubkey_response["app_env_encrypt_pubkey"].as_str().unwrap(),
-            pubkey_response["app_id_salt"].as_str().unwrap(),
-        )
+        .deploy_with_config_do_encrypt(vm_config, &env_vars, pubkey, salt)
         .await?;
 
-    println!("Deployment successful!");
-    println!("ID: {}", deployment.id);
-    println!("Status: {}", deployment.status);
-    if let Some(details) = deployment.details {
-        println!("Details: {:#?}", details);
-    }
+    // ===== RESULT =====
+    println!("\n✅ Deployment successful!");
+    println!("   ID: {}", deployment.id);
+    println!("   Status: {}", deployment.status);
 
     Ok(())
 }

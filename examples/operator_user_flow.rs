@@ -1,111 +1,103 @@
-use dotenv::dotenv;
 use phala_tee_deploy_rs::{DeploymentConfig, Error, TeeClient};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::HashMap;
 use std::env;
 
-/// This example demonstrates a workflow where:
-/// 1. An operator retrieves a public key from the Phala API
-/// 2. The operator shares the public key with a user who encrypts sensitive data
-/// 3. The operator deploys the application with the encrypted environment variables
+/// This example demonstrates a security-focused deployment pattern with separation of concerns:
+/// - Operator: Has Phala API access and handles infrastructure (but no access to secrets)
+/// - User: Has sensitive credentials but no Phala API access
+///
+/// This pattern ensures that neither party has access to both infrastructure and secrets.
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    // Load environment variables from .env file
-    dotenv().ok();
+    dotenv::dotenv().ok();
 
-    // Set up the client configuration
-    let config = DeploymentConfig {
-        api_key: env::var("PHALA_API_KEY").expect("PHALA_API_KEY must be set"),
-        api_url: env::var("PHALA_API_ENDPOINT")
+    // ============ OPERATOR ACTIONS ============
+    println!("🔷 OPERATOR: Setting up deployment environment");
+
+    // Initialize client with minimal configuration
+    let client = TeeClient::new(DeploymentConfig {
+        api_key: env::var("PHALA_CLOUD_API_KEY").expect("API key required"),
+        api_url: env::var("PHALA_CLOUD_API_ENDPOINT")
             .unwrap_or_else(|_| "https://cloud-api.phala.network/api/v1".to_string()),
-        docker_compose: String::new(), // Not used in this example
-        env_vars: HashMap::new(),      // Not used in this example
-        teepod_id: 0,                  // Will select from available TEEPods
-        image: String::new(),          // Will select from available TEEPods
-        vm_config: None,               // Will create custom VM config
-    };
+        docker_compose: String::new(),
+        env_vars: HashMap::new(),
+        teepod_id: 0,
+        image: String::new(),
+        vm_config: None,
+    })?;
 
-    let client = TeeClient::new(config)?;
-
-    // STEP 1: Operator retrieves available TEEPods
-    println!("Fetching available TEEPods...");
+    // 1. Get available infrastructure
+    println!("🔷 OPERATOR: Discovering available TEEPods");
     let teepods = client.get_available_teepods().await?;
-
-    // For this example, we'll just take the first available TEEPod
     let teepod_id = teepods["nodes"][0]["teepod_id"].as_u64().unwrap();
     let image = teepods["nodes"][0]["images"][0]["name"].as_str().unwrap();
+    println!("      Using TEEPod ID: {}", teepod_id);
 
-    println!("Selected TEEPod ID: {}, Image: {}", teepod_id, image);
-
-    // Create VM configuration
+    // 2. Define application structure (without secrets)
+    println!("🔷 OPERATOR: Creating VM configuration");
     let vm_config = json!({
-        "name": "operator-user-example",
+        "name": "secure-app",
         "compose_manifest": {
             "docker_compose_file": r#"
-version: '3'
 services:
   app:
-    image: busybox
-    command: sh -c "while true; do echo $SECRET_MESSAGE; sleep 5; done"
-"#,
+    image: alpine:latest
+    command: sh -c "while true; do echo $SECRET_API_KEY; sleep 10; done"
+    "#,
             "name": "secure-app"
         },
+        "vcpu": 1,
+        "memory": 1024,
+        "disk_size": 10,
         "teepod_id": teepod_id,
         "image": image
     });
 
-    // STEP 2: Operator retrieves encryption public key
-    println!("Retrieving public key for encryption...");
+    // 3. Get encryption key
+    println!("🔷 OPERATOR: Obtaining encryption key from Phala Cloud");
     let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
-
     let pubkey = pubkey_response["app_env_encrypt_pubkey"].as_str().unwrap();
     let salt = pubkey_response["app_id_salt"].as_str().unwrap();
 
-    println!("Received public key: {}", pubkey);
-    println!("Received salt: {}", salt);
+    // 4. Securely share public key with user
+    println!("🔷 OPERATOR: Sending public key to user via secure channel\n");
 
-    // -----------------------------------------------------------------
-    // STEP 3: Operator sends public key to the user
-    // This would happen outside of this code, e.g., via a secure channel
-    println!("\n--- SIMULATING USER ACTION ---");
-    println!("User received public key: {}", pubkey);
+    // ============ USER ACTIONS ============
+    println!("🔶 USER: Received public key: {}...", &pubkey[0..16]);
 
-    // The user would encrypt their sensitive data with the public key
-    // For this example, we'll simulate this by encrypting it ourselves
-
-    // Normally, the user would do this part on their own machine:
-    let user_secrets = vec![
+    // 1. User defines sensitive environment variables
+    println!("🔶 USER: Preparing sensitive environment variables");
+    let sensitive_env_vars = vec![
         (
-            "SECRET_MESSAGE".to_string(),
-            "This is a secret message!".to_string(),
+            "SECRET_API_KEY".to_string(),
+            "api_18f21a0bc99d4b7".to_string(),
         ),
-        ("API_KEY".to_string(), "user-secret-api-key".to_string()),
+        (
+            "DATABASE_PASSWORD".to_string(),
+            "very-secure-pw-123".to_string(),
+        ),
     ];
 
-    // In a real scenario, the user would:
-    // 1. Create an Encryptor instance
-    // 2. Encrypt their environment variables using the public key
-    // 3. Send the encrypted data back to the operator
+    // 2. User sends sensitive data to operator
+    // In a real-world scenario, the user would encrypt these variables themselves
+    // using a local encryption tool with the provided public key
+    println!("🔶 USER: Sending sensitive data to operator\n");
 
-    println!("User encrypts environment variables with the public key");
-    println!("User sends back encrypted data to operator");
-    println!("--- END USER SIMULATION ---\n");
-    // -----------------------------------------------------------------
+    // ============ OPERATOR ACTIONS CONTINUED ============
+    println!("🔷 OPERATOR: Received sensitive environment variables for deployment");
 
-    // STEP 4: Operator receives the encrypted environment variables from the user
-    // In a real scenario, the encrypted data would come from the user
-    // For this example, we'll simulate by encrypting it here
-    println!("Operator received encrypted environment from user");
-
-    // STEP 5: Operator deploys with the VM configuration and encrypted environment
-    println!("Deploying application with encrypted environment...");
+    // 5. Deploy with VM config and environment variables (encrypted internally)
+    println!("🔷 OPERATOR: Deploying application with encrypted environment");
     let deployment = client
-        .deploy_with_config_do_encrypt(vm_config, &user_secrets, pubkey, salt)
+        .deploy_with_config_do_encrypt(vm_config, &sensitive_env_vars, pubkey, salt)
         .await?;
 
-    println!("Deployment successful!");
-    println!("Deployment ID: {}", deployment.id);
-    println!("Status: {}", deployment.status);
+    // ============ RESULT ============
+    println!("\n✅ Deployment successful!");
+    println!("   ID: {}", deployment.id);
+    println!("   Status: {}", deployment.status);
+    println!("\n🔒 Security benefit: Neither party had access to both API keys and secrets");
 
     Ok(())
 }

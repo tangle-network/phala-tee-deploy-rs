@@ -45,7 +45,7 @@ pub struct EncryptedEnv {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeploymentResponse {
-    pub id: String,
+    pub id: u64,
     pub status: String,
     pub details: Option<HashMap<String, serde_json::Value>>,
 }

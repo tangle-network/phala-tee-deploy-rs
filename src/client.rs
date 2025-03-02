@@ -77,6 +77,27 @@ impl TeeClient {
                 })?,
         )?;
 
+        // Create a mutable request body from vm_config
+        let mut request_body = serde_json::to_value(&vm_config)
+            .unwrap()
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+
+        // Add the additional fields
+        request_body.insert(
+            "encrypted_env".to_string(),
+            serde_json::Value::String(encrypted_env),
+        );
+        request_body.insert(
+            "app_env_encrypt_pubkey".to_string(),
+            pubkey_response["app_env_encrypt_pubkey"].clone(),
+        );
+        request_body.insert(
+            "app_id_salt".to_string(),
+            pubkey_response["app_id_salt"].clone(),
+        );
+
         // Create deployment
         let response = self
             .client
@@ -86,12 +107,7 @@ impl TeeClient {
             ))
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.config.api_key)
-            .json(&json!({
-                "vm_config": vm_config,
-                "encrypted_env": encrypted_env,
-                "app_env_encrypt_pubkey": pubkey_response["app_env_encrypt_pubkey"],
-                "app_id_salt": pubkey_response["app_id_salt"],
-            }))
+            .json(&request_body)
             .send()
             .await?;
 
@@ -266,6 +282,24 @@ impl TeeClient {
         app_env_encrypt_pubkey: &str,
         app_id_salt: &str,
     ) -> Result<DeploymentResponse, Error> {
+        // Create a mutable request body
+        let mut request_body = vm_config.as_object().cloned().unwrap_or_default();
+
+        // Add the additional fields
+        request_body.insert(
+            "encrypted_env".to_string(),
+            serde_json::Value::String(encrypted_env),
+        );
+        request_body.insert(
+            "app_env_encrypt_pubkey".to_string(),
+            serde_json::Value::String(app_env_encrypt_pubkey.to_string()),
+        );
+        request_body.insert(
+            "app_id_salt".to_string(),
+            serde_json::Value::String(app_id_salt.to_string()),
+        );
+
+        println!("request_body: {:#?}", request_body);
         // Create deployment
         let response = self
             .client
@@ -275,12 +309,7 @@ impl TeeClient {
             ))
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.config.api_key)
-            .json(&json!({
-                "vm_config": vm_config,
-                "encrypted_env": encrypted_env,
-                "app_env_encrypt_pubkey": app_env_encrypt_pubkey,
-                "app_id_salt": app_id_salt,
-            }))
+            .json(&request_body)
             .send()
             .await?;
 

@@ -1,72 +1,67 @@
 use phala_tee_deploy_rs::{DeploymentConfig, Result, TeeClient};
+use serde_json::json;
 use std::collections::HashMap;
 use std::env;
 
+/// This example demonstrates how to update an existing deployment
+/// with new configuration and environment variables
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load environment variables
+    // ===== SETUP =====
     dotenv::dotenv().ok();
 
-    // Get API key and endpoint from environment
-    let api_key = env::var("PHALA_CLOUD_API_KEY").expect("PHALA_CLOUD_API_KEY must be set");
-    let api_endpoint = env::var("PHALA_CLOUD_API_ENDPOINT")
-        .unwrap_or_else(|_| "https://cloud-api.phala.network/api/v1".to_string());
-
-    // Get app_id from command line or environment
+    // Get application ID from arguments or environment
     let app_id = env::args()
         .nth(1)
         .or_else(|| env::var("PHALA_APP_ID").ok())
-        .expect("App ID must be provided as argument or PHALA_APP_ID env var");
+        .expect("App ID required: provide as argument or PHALA_APP_ID env var");
 
-    // Create a minimal config for API access
-    let config = DeploymentConfig {
-        api_key,
-        api_url: api_endpoint,
-        docker_compose: String::new(), // Not needed for updates
-        env_vars: HashMap::new(),      // Not needed for updates
-        teepod_id: 0,                  // Not needed for updates
-        image: String::new(),          // Not needed for updates
-        vm_config: None,               // Not needed for updates
-    };
+    // Initialize client with minimal configuration
+    let client = TeeClient::new(DeploymentConfig {
+        api_key: env::var("PHALA_CLOUD_API_KEY").expect("API key required"),
+        api_url: env::var("PHALA_CLOUD_API_ENDPOINT")
+            .unwrap_or_else(|_| "https://cloud-api.phala.network/api/v1".to_string()),
+        docker_compose: String::new(),
+        env_vars: HashMap::new(),
+        teepod_id: 0,
+        image: String::new(),
+        vm_config: None,
+    })?;
 
-    let client = TeeClient::new(config)?;
+    // ===== PHASE 1: RETRIEVE CURRENT CONFIGURATION =====
+    println!("1. Retrieving current deployment configuration...");
+    let compose = client.get_compose(&app_id).await?;
 
-    // Step 1: Get current compose manifest
-    println!("Fetching current deployment configuration...");
-    let compose_response = client.get_compose(&app_id).await?;
-    println!("Current compose manifest retrieved.");
+    // ===== PHASE 2: MODIFY CONFIGURATION =====
+    println!("2. Modifying deployment configuration...");
+    let mut compose_file = compose.compose_file;
 
-    // Step 2: Adjust the compose file
-    let mut compose_file = compose_response.compose_file;
-    compose_file["pre_launch_script"] = serde_json::json!(
-        r#"
-#!/bin/bash
-echo "--------------------------------"
-echo "Hello again, DSTACK!"
-echo "--------------------------------"
-echo
-env
-echo "--------------------------------"
-    "#
-    );
+    // Example: Update container image
+    if let Some(services) = compose_file["services"].as_object_mut() {
+        if let Some(app_service) = services.get_mut("app") {
+            if app_service.is_object() {
+                app_service["image"] = json!("updated-image:latest");
+                println!("   Updated service image to 'updated-image:latest'");
+            }
+        }
+    }
 
-    // Step 3 (optional): Prepare environment variables to encrypt
+    // Example: Add or update environment variables
+    println!("3. Preparing new environment variables...");
     let mut env_vars = HashMap::new();
-    env_vars.insert("FOO".to_string(), "BAR".to_string());
+    env_vars.insert("API_KEY".to_string(), "updated-api-key".to_string());
+    env_vars.insert("DEBUG_MODE".to_string(), "true".to_string());
 
-    // Step 4: Update the compose file
-    println!("Updating deployment configuration...");
+    // ===== PHASE 3: APPLY UPDATES =====
+    println!("4. Applying updates to deployment...");
     let update_response = client
-        .update_compose(
-            &app_id,
-            compose_file,
-            Some(env_vars),
-            compose_response.env_pubkey,
-        )
+        .update_compose(&app_id, compose_file, Some(env_vars), compose.env_pubkey)
         .await?;
 
-    println!("Deployment updated successfully!");
-    println!("Response: {:?}", update_response);
+    // ===== RESULT =====
+    println!("\n✅ Deployment updated successfully!");
+    println!("   New configuration applied to app ID: {}", app_id);
+    println!("   Update response: {:#?}", update_response);
 
     Ok(())
 }

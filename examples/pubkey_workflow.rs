@@ -1,6 +1,6 @@
 use dotenv::dotenv;
 use phala_tee_deploy_rs::{DeploymentConfig, Encryptor, Error, TeeClient};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::HashMap;
 use std::env;
 
