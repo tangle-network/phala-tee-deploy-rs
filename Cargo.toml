@@ -11,13 +11,9 @@ reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
-curve25519-dalek = "4.1"
 x25519-dalek = "2.0"
 rand = "0.8"
-base64 = "0.21"
 aes-gcm = "0.10"
-tracing = "0.1"
-async-trait = "0.1"
 hex = "0.4.3"
 uuid = { version = "1.13.0", features = ["v4"] }
 dotenv = "0.15.0"
