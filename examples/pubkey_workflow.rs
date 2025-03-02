@@ -76,8 +76,7 @@ services:
         ("API_KEY".to_string(), "user-api-key-456".to_string()),
     ];
     // Encrypt the environment variables
-    let encryptor = Encryptor::new();
-    let encrypted_env = encryptor.encrypt_env_vars(&user_secrets, public_key)?;
+    let encrypted_env = Encryptor::encrypt_env_vars(&user_secrets, public_key)?;
 
     // STEP 4: Call /cvms/from_cvm_configuration with the VM config and encrypted env
     println!("Step 4: Deploying with the VM configuration and encrypted environment");

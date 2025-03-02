@@ -60,7 +60,6 @@ impl TeeClient {
         let pubkey_response = self.get_pubkey(&vm_config).await?;
 
         // Encrypt environment variables
-        let encryptor = Encryptor::new();
         let env_vars: Vec<_> = self
             .config
             .env_vars
@@ -68,7 +67,7 @@ impl TeeClient {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        let encrypted_env = encryptor.encrypt_env_vars(
+        let encrypted_env = Encryptor::encrypt_env_vars(
             &env_vars,
             &pubkey_response["app_env_encrypt_pubkey"]
                 .as_str()
@@ -170,8 +169,7 @@ impl TeeClient {
         // Encrypt environment variables if provided
         if let Some(vars) = env_vars {
             let env_vars: Vec<_> = vars.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            let encryptor = Encryptor::new();
-            let encrypted_env = encryptor.encrypt_env_vars(&env_vars, &env_pubkey)?;
+            let encrypted_env = Encryptor::encrypt_env_vars(&env_vars, &env_pubkey)?;
             body["encrypted_env"] = json!(encrypted_env);
         }
 
@@ -250,8 +248,7 @@ impl TeeClient {
         app_id_salt: &str,
     ) -> Result<DeploymentResponse, Error> {
         // Encrypt environment variables
-        let encryptor = Encryptor::new();
-        let encrypted_env = encryptor.encrypt_env_vars(env_vars, app_env_encrypt_pubkey)?;
+        let encrypted_env = Encryptor::encrypt_env_vars(env_vars, app_env_encrypt_pubkey)?;
 
         self.deploy_with_config_encrypted_env(
             vm_config,
