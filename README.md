@@ -115,8 +115,6 @@ This workflow demonstrates a separation of concerns pattern where:
 1. An **operator** is responsible for infrastructure (has API access to deploy)
 2. A **user** is responsible for application secrets (but doesn't need API access)
 
-This pattern enhances security by limiting who has access to what, and it's particularly useful in enterprise environments where different teams manage infrastructure and application secrets.
-
 ```rust
 // OPERATOR ACTIONS
 // The operator has API access but doesn't need to see the secrets
