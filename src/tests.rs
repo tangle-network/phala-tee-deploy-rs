@@ -248,7 +248,7 @@ async fn test_deploy_with_config() {
     let pubkey = format!("0x{}", hex::encode([1u8; 32]));
 
     let result = client
-        .deploy_with_config(vm_config, &env_vars, &pubkey, "test_salt")
+        .deploy_with_config_do_encrypt(vm_config, &env_vars, &pubkey, "test_salt")
         .await
         .unwrap();
 
@@ -289,7 +289,7 @@ async fn test_deploy_with_config_error() {
     let pubkey = format!("0x{}", hex::encode([1u8; 32]));
 
     let result = client
-        .deploy_with_config(vm_config, &env_vars, &pubkey, "test_salt")
+        .deploy_with_config_do_encrypt(vm_config, &env_vars, &pubkey, "test_salt")
         .await;
 
     assert!(matches!(

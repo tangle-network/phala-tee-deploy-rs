@@ -96,7 +96,7 @@ echo "--------------------------------"
     // Step 4: Deploy with encrypted environment variables
     println!("Deploying VM...");
     let deployment = client
-        .deploy_with_config(
+        .deploy_with_config_do_encrypt(
             vm_config,
             &env_vars,
             pubkey_response["app_env_encrypt_pubkey"].as_str().unwrap(),

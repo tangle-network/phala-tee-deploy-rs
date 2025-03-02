@@ -82,6 +82,7 @@ mod tests;
 
 pub use client::TeeClient;
 pub use config::DeploymentConfig;
+pub use crypto::Encryptor;
 pub use error::Error;
 pub use types::*;
 

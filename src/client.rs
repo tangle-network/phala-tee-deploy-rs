@@ -242,7 +242,7 @@ impl TeeClient {
     }
 
     /// Deploy a container with a custom VM configuration
-    pub async fn deploy_with_config(
+    pub async fn deploy_with_config_do_encrypt(
         &self,
         vm_config: serde_json::Value,
         env_vars: &[(String, String)],
@@ -253,6 +253,22 @@ impl TeeClient {
         let encryptor = Encryptor::new();
         let encrypted_env = encryptor.encrypt_env_vars(env_vars, app_env_encrypt_pubkey)?;
 
+        self.deploy_with_config_encrypted_env(
+            vm_config,
+            encrypted_env,
+            app_env_encrypt_pubkey,
+            app_id_salt,
+        )
+        .await
+    }
+
+    pub async fn deploy_with_config_encrypted_env(
+        &self,
+        vm_config: serde_json::Value,
+        encrypted_env: String,
+        app_env_encrypt_pubkey: &str,
+        app_id_salt: &str,
+    ) -> Result<DeploymentResponse, Error> {
         // Create deployment
         let response = self
             .client

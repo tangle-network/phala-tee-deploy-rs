@@ -108,6 +108,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Operator-User Workflow (Separation of Privileges)
+
+This workflow demonstrates a separation of concerns pattern where:
+
+1. An **operator** is responsible for infrastructure (has API access to deploy)
+2. A **user** is responsible for application secrets (but doesn't need API access)
+
+This pattern enhances security by limiting who has access to what, and it's particularly useful in enterprise environments where different teams manage infrastructure and application secrets.
+
+```rust
+// OPERATOR ACTIONS
+// The operator has API access but doesn't need to see the secrets
+async fn operator_workflow() -> Result<(), Error> {
+    // Set up client
+    let client = TeeClient::new(/* config */)?;
+
+    // 1. Fetch available TEEPods
+    let teepods = client.get_available_teepods().await?;
+    let teepod_id = teepods["nodes"][0]["teepod_id"].as_u64().unwrap();
+    let image = teepods["nodes"][0]["images"][0]["name"].as_str().unwrap();
+
+    // 2. Create VM configuration
+    let vm_config = json!({
+        "name": "secure-application",
+        "compose_manifest": {
+            "docker_compose_file": "version: '3'...",
+            "name": "app"
+        },
+        "teepod_id": teepod_id,
+        "image": image
+    });
+
+    // 3. Get encryption public key
+    let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
+    let pubkey = pubkey_response["app_env_encrypt_pubkey"].as_str().unwrap();
+    let salt = pubkey_response["app_id_salt"].as_str().unwrap();
+
+    // 4. Send public key to user through secure channel
+    // ... (external communication happens here) ...
+
+    // 5. Receive encrypted environment variables from user
+    let encrypted_env = receive_from_user();
+
+    // 6. Deploy with encrypted environment
+    let deployment = client
+        .deploy_with_config(vm_config, &user_secrets, pubkey, salt)
+        .await?;
+
+    println!("Deployed: {}", deployment.id);
+    Ok(())
+}
+
+// USER ACTIONS
+// The user has the secrets but doesn't need API access
+fn user_workflow(pubkey: &str, salt: &str) -> String {
+    // 1. Prepare sensitive environment variables
+    let secrets = vec![
+        ("API_KEY".to_string(), "secret-api-key".to_string()),
+        ("DATABASE_PASSWORD".to_string(), "db-password".to_string()),
+    ];
+
+    // 2. Encrypt environment variables using public key
+    let encryptor = create_encryptor(pubkey, salt);
+    let encrypted_data = encrypt_env_vars(encryptor, &secrets);
+
+    // 3. Send encrypted data back to operator
+    // ... (external communication happens here) ...
+
+    encrypted_data
+}
+```
+
 ### Simplified Deployment
 
 The library provides a simplified approach which handles many steps internally:
