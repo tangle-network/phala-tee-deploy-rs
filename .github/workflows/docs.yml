@@ -1,0 +1,55 @@
+name: Rust Documentation
+
+on:
+  push:
+    branches: [main] # Change this to your default branch if different
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Build Documentation
+        run: |
+          cargo doc --no-deps
+
+          # Create an index.html that redirects to the main page
+          echo '<meta http-equiv="refresh" content="0; url=phala_tee_deploy_rs/index.html">' > target/doc/index.html
+
+          # Copy the documentation to a directory for GitHub Pages
+          mkdir -p public
+          cp -R target/doc/* public/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v3
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
