@@ -10,14 +10,40 @@ use crate::{
     types::{ComposeResponse, DeploymentResponse, VmConfig},
 };
 
-/// Client for interacting with the TEE deployment API
+/// Client for interacting with the Phala TEE Cloud API.
+///
+/// `TeeClient` provides low-level access to the Phala Cloud API for deploying
+/// and managing containerized applications in a Trusted Execution Environment (TEE).
+/// This client handles authentication, API requests, and encryption of sensitive data.
+///
+/// For most use cases, consider using the higher-level `TeeDeployer` API instead,
+/// which provides a more ergonomic interface built on top of this client.
+///
+/// # Features
+///
+/// * Direct API access to the Phala TEE Cloud
+/// * Secure environment variable encryption
+/// * TEEPod discovery and selection
+/// * Application deployment and management
 pub struct TeeClient {
     client: Client,
     config: DeploymentConfig,
 }
 
 impl TeeClient {
-    /// Create a new TeeClient with the given configuration
+    /// Creates a new `TeeClient` with the given configuration.
+    ///
+    /// # Parameters
+    ///
+    /// * `config` - The deployment configuration including API credentials and default settings
+    ///
+    /// # Returns
+    ///
+    /// A new `TeeClient` instance if successful
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created
     pub fn new(config: DeploymentConfig) -> Result<Self, Error> {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
@@ -27,7 +53,21 @@ impl TeeClient {
         Ok(Self { client, config })
     }
 
-    /// Deploy a container to the TEE environment
+    /// Deploys a container to the TEE environment using the client's configuration.
+    ///
+    /// This method uses the configuration set during client creation to deploy
+    /// an application. It handles VM configuration, encryption, and API communication.
+    ///
+    /// # Returns
+    ///
+    /// A `DeploymentResponse` containing the deployment details if successful
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The API request fails
+    /// * Environment variables cannot be encrypted
+    /// * The API returns an error response
     pub async fn deploy(&self) -> Result<DeploymentResponse, Error> {
         // Get or create VM configuration
         let vm_config = self.config.vm_config.clone().unwrap_or_else(|| VmConfig {
@@ -124,6 +164,22 @@ impl TeeClient {
             .map_err(Error::HttpClient)
     }
 
+    /// Retrieves the encryption public key for a given VM configuration.
+    ///
+    /// This is a helper method used internally to get the public key needed
+    /// for securely encrypting environment variables.
+    ///
+    /// # Parameters
+    ///
+    /// * `vm_config` - The VM configuration to get a public key for
+    ///
+    /// # Returns
+    ///
+    /// A JSON value containing the public key and salt if successful
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or returns an error
     async fn get_pubkey(&self, vm_config: &VmConfig) -> Result<serde_json::Value, Error> {
         let response = self
             .client
@@ -147,7 +203,19 @@ impl TeeClient {
         response.json().await.map_err(Error::HttpClient)
     }
 
-    /// Get the current compose configuration for an app
+    /// Retrieves the current Docker Compose configuration for an application.
+    ///
+    /// # Parameters
+    ///
+    /// * `app_id` - The ID of the application to get the configuration for
+    ///
+    /// # Returns
+    ///
+    /// A `ComposeResponse` containing the compose file and encryption public key
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or the application is not found
     pub async fn get_compose(&self, app_id: &str) -> Result<ComposeResponse, Error> {
         let response = self
             .client
@@ -170,7 +238,28 @@ impl TeeClient {
             .map_err(Error::HttpClient)
     }
 
-    /// Update the compose configuration for an app
+    /// Updates the Docker Compose configuration for an existing application.
+    ///
+    /// This method can update both the application configuration and its
+    /// environment variables.
+    ///
+    /// # Parameters
+    ///
+    /// * `app_id` - The ID of the application to update
+    /// * `compose_file` - The new Docker Compose configuration
+    /// * `env_vars` - Optional new environment variables
+    /// * `env_pubkey` - The public key for encrypting environment variables
+    ///
+    /// # Returns
+    ///
+    /// A JSON value containing the update operation result
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The API request fails
+    /// * The application is not found
+    /// * Environment variables cannot be encrypted
     pub async fn update_compose(
         &self,
         app_id: &str,
@@ -208,27 +297,93 @@ impl TeeClient {
         response.json().await.map_err(Error::HttpClient)
     }
 
-    /// Get available TEEPods
+    /// Retrieves a list of available TEEPods from the Phala Cloud API.
+    ///
+    /// This method queries the API for TEEPods that are available for deployment,
+    /// providing detailed diagnostics for any connection issues.
+    ///
+    /// # Returns
+    ///
+    /// A JSON value containing the list of available TEEPods if successful
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The network request fails (timeout, connection issues, etc.)
+    /// * The API returns an error response
+    /// * The response cannot be parsed as valid JSON
     pub async fn get_available_teepods(&self) -> Result<serde_json::Value, Error> {
-        let response = self
+        // Construct request URL
+        let request_url = format!("{}/teepods/available", self.config.api_url);
+
+        // Build request with explicit timeouts
+        let request = self
             .client
-            .get(format!("{}/teepods/available", self.config.api_url))
+            .get(&request_url)
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.config.api_key)
-            .send()
-            .await?;
+            .timeout(std::time::Duration::from_secs(15)); // Extend timeout for slow networks
 
+        // Log request and execute
+        eprintln!("Requesting TEEPods from: {}", request_url);
+
+        let response = match request.send().await {
+            Ok(resp) => resp,
+            Err(err) => {
+                let err_msg = format!("Network error while fetching TEEPods: {}", err);
+                eprintln!("{}", err_msg);
+
+                if err.is_timeout() {
+                    eprintln!("Request timed out - the server may be under high load or your network connection may be slow");
+                } else if err.is_connect() {
+                    eprintln!(
+                        "Connection error - please check your network connection and API endpoint"
+                    );
+                }
+
+                return Err(Error::HttpClient(err));
+            }
+        };
+
+        // Check response status
         if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unable to read error response".to_string());
+
+            eprintln!("API error (status {}): {}", status.as_u16(), error_text);
+
             return Err(Error::Api {
-                status_code: response.status().as_u16(),
-                message: response.text().await?,
+                status_code: status.as_u16(),
+                message: error_text,
             });
         }
 
-        response.json().await.map_err(Error::HttpClient)
+        // Parse response
+        match response.json().await {
+            Ok(json) => Ok(json),
+            Err(err) => {
+                eprintln!("Failed to parse API response: {}", err);
+                Err(Error::HttpClient(err))
+            }
+        }
     }
 
-    /// Get the public key for a VM configuration
+    /// Retrieves the encryption public key for a custom VM configuration.
+    ///
+    /// # Parameters
+    ///
+    /// * `vm_config` - The VM configuration as a JSON value
+    ///
+    /// # Returns
+    ///
+    /// A JSON value containing the public key and salt for encryption
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or returns an error
     pub async fn get_pubkey_for_config(
         &self,
         vm_config: &serde_json::Value,
@@ -255,7 +410,28 @@ impl TeeClient {
         response.json().await.map_err(Error::HttpClient)
     }
 
-    /// Deploy a container with a custom VM configuration
+    /// Deploys a container with a custom VM configuration and encrypts environment variables.
+    ///
+    /// This method handles the encryption of environment variables and then calls
+    /// `deploy_with_config_encrypted_env` to perform the actual deployment.
+    ///
+    /// # Parameters
+    ///
+    /// * `vm_config` - The VM configuration as a JSON value
+    /// * `env_vars` - Environment variables to encrypt and include in the deployment
+    /// * `app_env_encrypt_pubkey` - The public key for encrypting environment variables
+    /// * `app_id_salt` - The salt value for encryption
+    ///
+    /// # Returns
+    ///
+    /// A `DeploymentResponse` containing the deployment details if successful
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * Environment variable encryption fails
+    /// * The API request fails
+    /// * The API returns an error response
     pub async fn deploy_with_config_do_encrypt(
         &self,
         vm_config: serde_json::Value,
@@ -275,6 +451,25 @@ impl TeeClient {
         .await
     }
 
+    /// Deploys a container with a custom VM configuration and pre-encrypted environment variables.
+    ///
+    /// This method is the final step in the deployment process, sending the VM configuration
+    /// and encrypted environment variables to the API.
+    ///
+    /// # Parameters
+    ///
+    /// * `vm_config` - The VM configuration as a JSON value
+    /// * `encrypted_env` - Pre-encrypted environment variables as a string
+    /// * `app_env_encrypt_pubkey` - The public key used for encryption
+    /// * `app_id_salt` - The salt value used for encryption
+    ///
+    /// # Returns
+    ///
+    /// A `DeploymentResponse` containing the deployment details if successful
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or returns an error
     pub async fn deploy_with_config_encrypted_env(
         &self,
         vm_config: serde_json::Value,

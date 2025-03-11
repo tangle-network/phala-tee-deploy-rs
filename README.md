@@ -9,6 +9,7 @@ Phala TEE Cloud runs applications in hardware-enforced isolated enclaves, provid
 - **Environment Variable Encryption** - Secure handling of sensitive data
 - **Docker Compose Support** - Deploy multi-container applications
 - **Flexible Deployment Patterns** - From simple one-step to advanced privilege separation
+- **Dockworker Integration** - Create and manage Docker Compose configurations programmatically
 
 ## Getting Started
 
@@ -29,9 +30,63 @@ PHALA_TEEPOD_ID=your-teepod-id
 PHALA_APP_ID=your-app-id  # For updating existing deployments
 ```
 
-## Deployment Patterns
+## Deployment APIs
 
-### Pattern 1: Simple Deployment
+### High-Level API with TeeDeployer (Recommended)
+
+The `TeeDeployer` provides a streamlined interface for deploying Docker Compose applications to Phala TEE Cloud. It integrates with the [dockworker](https://github.com/tangle-network/dockworker) library to simplify Docker Compose configuration management.
+
+```rust
+use dockworker::config::compose::{ComposeConfig, Service};
+use phala_tee_deploy_rs::{TeeDeployer, TeeDeployerBuilder};
+use std::collections::HashMap;
+
+// Create deployer with builder pattern
+let mut deployer = TeeDeployerBuilder::new()
+    .with_api_key(std::env::var("PHALA_CLOUD_API_KEY")?)
+    .build()?;
+
+// Discover available TEEPod
+deployer.discover_teepod().await?;
+
+// Option 1: Deploy from YAML string
+let yaml = r#"
+version: '3'
+services:
+  app:
+    image: nginx:latest
+    ports:
+      - "80:80"
+"#;
+
+let result = deployer.deploy_compose_from_string(
+    yaml,
+    "my-app",
+    env_vars,
+    Some(1),    // vCPUs
+    Some(1024), // Memory (MB)
+    Some(10),   // Disk size (GB)
+).await?;
+
+// Option 2: Deploy from dockworker ComposeConfig
+let mut compose_config = ComposeConfig::default();
+// ... configure services programmatically ...
+
+let result = deployer.deploy_compose(
+    &compose_config,
+    "my-app",
+    env_vars,
+    None, // Use default vCPUs
+    None, // Use default memory
+    None, // Use default disk size
+).await?;
+```
+
+### Low-Level API with TeeClient
+
+The following patterns use the `TeeClient` directly for more control over the deployment process.
+
+#### Pattern 1: Simple Deployment
 
 Deploy with a single function call. Best for straightforward applications where simplicity is key:
 
@@ -49,7 +104,7 @@ let deployment = client.deploy().await?;
 println!("Deployed: {}", deployment.id);
 ```
 
-### Pattern 2: Step-by-Step Deployment
+#### Pattern 2: Step-by-Step Deployment
 
 For when you need full control over the deployment process:
 
@@ -83,7 +138,7 @@ let deployment = client.deploy_with_config_do_encrypt(
 ).await?;
 ```
 
-### Pattern 3: Privilege Separation
+#### Pattern 3: Privilege Separation
 
 Security-focused approach where operators handle infrastructure while users manage secrets:
 
@@ -117,7 +172,7 @@ let encrypted = Encryptor::encrypt_env_vars(&secrets, pubkey)?;
 send_to_operator(encrypted);
 ```
 
-### Pattern 4: Updating Deployments
+#### Pattern 4: Updating Deployments
 
 Update existing deployments with new configurations or environment variables:
 
@@ -138,20 +193,21 @@ client.update_compose(
 ).await?;
 ```
 
-## API Reference
-
-- `DeploymentConfig` - Core configuration for deployments
-- `TeeClient` - API client with methods for deployment operations
-- `Encryptor` - Handles secure encryption of environment variables
-
 ## Examples
 
 See the `examples/` directory for full working examples:
 
+- `dockworker_integration.rs` - Using TeeDeployer with dockworker to manage deployments
 - `typescript_equivalent.rs` - Step-by-step deployment matching TypeScript workflow
-- `pubkey_workflow.rs` - Public key encryption workflow
 - `operator_user_flow.rs` - Privilege separation pattern
 - `update_deployment.rs` - Updating existing deployments
+
+## API Reference
+
+- `TeeDeployer` - High-level API for simplified deployment with dockworker integration
+- `DeploymentConfig` - Core configuration for deployments
+- `TeeClient` - Low-level API client with methods for deployment operations
+- `Encryptor` - Handles secure encryption of environment variables
 
 ## License
 

@@ -6,12 +6,39 @@ use aes_gcm::{
 use rand::{rngs::OsRng, RngCore};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-/// Handles encryption operations for TEE deployments
+/// Cryptographic utilities for secure data transmission.
+///
+/// This struct provides methods for encrypting sensitive data, particularly
+/// environment variables, using industry-standard cryptographic algorithms.
+/// It implements the same encryption scheme as the TypeScript client to ensure
+/// compatibility with the Phala TEE Cloud platform.
 pub struct Encryptor;
 
 impl Encryptor {
-    /// Encrypt environment variables using X25519 key exchange and AES-GCM
-    /// This matches the TypeScript implementation's behavior
+    /// Encrypts environment variables using X25519 key exchange and AES-GCM.
+    ///
+    /// This method implements a hybrid encryption scheme:
+    /// 1. X25519 for key exchange (establishes a shared secret)
+    /// 2. AES-GCM for authenticated encryption of the actual data
+    ///
+    /// The process is compatible with the TypeScript implementation used by
+    /// the Phala Cloud API.
+    ///
+    /// # Parameters
+    ///
+    /// * `env_vars` - A slice of key-value pairs representing environment variables to encrypt
+    /// * `remote_pubkey_hex` - The remote public key as a hex string (with or without '0x' prefix)
+    ///
+    /// # Returns
+    ///
+    /// A hex-encoded string containing the ephemeral public key, IV, and encrypted data
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The public key is not valid hex or has incorrect length
+    /// * JSON serialization fails
+    /// * Encryption fails
     pub fn encrypt_env_vars(
         env_vars: &[(String, String)],
         remote_pubkey_hex: &str,
