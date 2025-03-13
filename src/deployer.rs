@@ -1,4 +1,7 @@
-use crate::{DeploymentConfig, Error, PubkeyResponse, Result, TeeClient, TeePodDiscoveryResponse};
+use crate::{
+    AdvancedFeatures, ComposeManifest, DeploymentConfig, DeploymentResponse, DockerConfig, Error,
+    PubkeyResponse, Result, TeeClient, TeePodDiscoveryResponse, VmConfig,
+};
 use dockworker::config::compose::{ComposeConfig, Service};
 use dockworker::config::EnvironmentVars;
 use serde_json::{json, Value};
@@ -237,7 +240,7 @@ impl TeeDeployer {
     ///
     /// # Returns
     ///
-    /// A `Value` containing deployment details including ID, status, and TEEPod information
+    /// A `DeploymentResponse` containing deployment details including ID, status, and TEEPod information
     ///
     /// # Errors
     ///
@@ -254,7 +257,7 @@ impl TeeDeployer {
         vcpu: Option<u64>,
         memory: Option<u64>,
         disk_size: Option<u64>,
-    ) -> Result<Value> {
+    ) -> Result<DeploymentResponse> {
         // Ensure we have a selected TEEPod
         let (teepod_id, image) = self.selected_teepod.as_ref().ok_or_else(|| Error::Api {
             status_code: 400,
@@ -294,13 +297,36 @@ impl TeeDeployer {
             .deploy_with_config_do_encrypt(vm_config, &env_vars_vec, &pubkey, &salt)
             .await?;
 
-        Ok(json!({
-            "id": deployment.id,
-            "status": deployment.status,
-            "details": deployment.details,
-            "teepod_id": teepod_id,
-            "image": image
-        }))
+        // Add extra details if needed
+        if let Some(mut details) = deployment.details.clone() {
+            details.insert(
+                "teepod_id".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(*teepod_id)),
+            );
+            details.insert(
+                "image".to_string(),
+                serde_json::Value::String(image.clone()),
+            );
+
+            let mut deployment_with_details = deployment.clone();
+            deployment_with_details.details = Some(details);
+            Ok(deployment_with_details)
+        } else {
+            // Create new details if none exist
+            let mut details = HashMap::new();
+            details.insert(
+                "teepod_id".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(*teepod_id)),
+            );
+            details.insert(
+                "image".to_string(),
+                serde_json::Value::String(image.clone()),
+            );
+
+            let mut deployment_with_details = deployment.clone();
+            deployment_with_details.details = Some(details);
+            Ok(deployment_with_details)
+        }
     }
 
     /// Deploys a Docker Compose application from a file path.
@@ -319,7 +345,7 @@ impl TeeDeployer {
     ///
     /// # Returns
     ///
-    /// A `Value` containing deployment details including ID, status, and TEEPod information
+    /// A `DeploymentResponse` containing deployment details
     ///
     /// # Errors
     ///
@@ -334,7 +360,7 @@ impl TeeDeployer {
         vcpu: Option<u64>,
         memory: Option<u64>,
         disk_size: Option<u64>,
-    ) -> Result<Value> {
+    ) -> Result<DeploymentResponse> {
         // Read and parse compose file
         let content = std::fs::read_to_string(compose_path)
             .map_err(|e| Error::Configuration(format!("Failed to read compose file: {}", e)))?;
@@ -346,13 +372,13 @@ impl TeeDeployer {
             .await
     }
 
-    /// Deploys a Docker Compose application from a string.
+    /// Deploys a Docker Compose application from a YAML string.
     ///
-    /// Parses a Docker Compose file from a string and deploys it to the selected TEEPod.
+    /// Parses a Docker Compose YAML string and deploys it to the selected TEEPod.
     ///
     /// # Parameters
     ///
-    /// * `compose_content` - String containing Docker Compose configuration
+    /// * `yaml_content` - Docker Compose YAML content as a string
     /// * `app_name` - Name for the deployed application
     /// * `env_vars` - Environment variables for the application
     /// * `vcpu` - Optional vCPU cores for the VM
@@ -361,42 +387,42 @@ impl TeeDeployer {
     ///
     /// # Returns
     ///
-    /// A `Value` containing deployment details including ID, status, and TEEPod information
+    /// A `DeploymentResponse` containing deployment details
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// * The string cannot be parsed as valid Docker Compose
+    /// * The YAML cannot be parsed
     /// * The underlying `deploy_compose` call fails
     pub async fn deploy_compose_from_string(
         &self,
-        compose_content: &str,
+        yaml_content: &str,
         app_name: &str,
         env_vars: HashMap<String, String>,
         vcpu: Option<u64>,
         memory: Option<u64>,
         disk_size: Option<u64>,
-    ) -> Result<Value> {
+    ) -> Result<DeploymentResponse> {
         // Parse compose content
-        let compose_config: ComposeConfig = serde_yaml::from_str(compose_content)
+        let compose_config: ComposeConfig = serde_yaml::from_str(yaml_content)
             .map_err(|e| Error::Configuration(format!("Failed to parse compose content: {}", e)))?;
 
         self.deploy_compose(&compose_config, app_name, env_vars, vcpu, memory, disk_size)
             .await
     }
 
-    /// Creates and deploys a simple single-service Docker Compose application.
+    /// Deploys a simple service using just an image name and basic configuration.
     ///
-    /// This is a convenience method for quickly deploying a single container
-    /// without needing to create a full Docker Compose file.
+    /// This is a convenience method for quickly deploying a single service
+    /// without needing to create a full Docker Compose configuration.
     ///
     /// # Parameters
     ///
-    /// * `image` - Docker image to use (e.g., "nginx:latest")
-    /// * `service_name` - Name for the service within the Docker Compose configuration
+    /// * `image` - Docker image name (e.g. "nginx:latest")
+    /// * `service_name` - Name for the service
     /// * `app_name` - Name for the deployed application
-    /// * `env_vars` - Environment variables for the container
-    /// * `ports` - Optional port mappings (e.g., ["80:80"])
+    /// * `env_vars` - Environment variables for the service
+    /// * `ports` - Optional port mappings (e.g. ["80:80"])
     /// * `volumes` - Optional volume mappings
     /// * `command` - Optional command override for the container
     /// * `vcpu` - Optional vCPU cores for the VM
@@ -405,7 +431,7 @@ impl TeeDeployer {
     ///
     /// # Returns
     ///
-    /// A `Value` containing deployment details including ID, status, and TEEPod information
+    /// A `DeploymentResponse` containing deployment details
     ///
     /// # Errors
     ///
@@ -422,7 +448,7 @@ impl TeeDeployer {
         vcpu: Option<u64>,
         memory: Option<u64>,
         disk_size: Option<u64>,
-    ) -> Result<Value> {
+    ) -> Result<DeploymentResponse> {
         // Create a simple service configuration
         let mut service = Service::default();
         service.image = Some(image.to_string());
@@ -551,7 +577,7 @@ impl TeeDeployer {
         vcpu: Option<u64>,
         memory: Option<u64>,
         disk_size: Option<u64>,
-    ) -> Result<Value> {
+    ) -> Result<VmConfig> {
         // Ensure we have a selected TEEPod
         let (teepod_id, image) = self.selected_teepod.as_ref().ok_or_else(|| Error::Api {
             status_code: 400,
@@ -564,18 +590,31 @@ impl TeeDeployer {
         })?;
 
         // Create VM configuration
-        let vm_config = json!({
-            "name": app_name,
-            "compose_manifest": {
-                "docker_compose_file": docker_compose_file,
-                "name": app_name
+        let vm_config = VmConfig {
+            name: app_name.to_string(),
+            compose_manifest: ComposeManifest {
+                name: app_name.to_string(),
+                features: vec![],
+                docker_compose_file: docker_compose_file,
             },
-            "vcpu": vcpu.unwrap_or(1),
-            "memory": memory.unwrap_or(1024),
-            "disk_size": disk_size.unwrap_or(10),
-            "teepod_id": teepod_id,
-            "image": image
-        });
+            vcpu: vcpu.unwrap_or(1) as u32,
+            memory: memory.unwrap_or(1024) as u32,
+            disk_size: disk_size.unwrap_or(10) as u32,
+            teepod_id: *teepod_id,
+            image: image.to_string(),
+            advanced_features: AdvancedFeatures {
+                tproxy: false,
+                kms: false,
+                public_sys_info: false,
+                public_logs: false,
+                docker_config: DockerConfig {
+                    username: String::new(),
+                    password: String::new(),
+                    registry: None,
+                },
+                listed: false,
+            },
+        };
 
         Ok(vm_config)
     }
@@ -609,7 +648,7 @@ impl TeeDeployer {
         vcpu: Option<u64>,
         memory: Option<u64>,
         disk_size: Option<u64>,
-    ) -> Result<Value> {
+    ) -> Result<VmConfig> {
         // Read and parse compose file
         let content = std::fs::read_to_string(compose_path)
             .map_err(|e| Error::Configuration(format!("Failed to read compose file: {}", e)))?;
@@ -649,7 +688,7 @@ impl TeeDeployer {
         vcpu: Option<u64>,
         memory: Option<u64>,
         disk_size: Option<u64>,
-    ) -> Result<Value> {
+    ) -> Result<VmConfig> {
         // Parse compose content
         let compose_config: ComposeConfig = serde_yaml::from_str(compose_content)
             .map_err(|e| Error::Configuration(format!("Failed to parse compose content: {}", e)))?;
@@ -706,7 +745,7 @@ impl TeeDeployer {
         encrypted_env: String,
         app_env_encrypt_pubkey: &str,
         app_id_salt: &str,
-    ) -> Result<Value> {
+    ) -> Result<DeploymentResponse> {
         let response = self
             .client
             .deploy_with_config_encrypted_env(
@@ -717,11 +756,7 @@ impl TeeDeployer {
             )
             .await?;
 
-        Ok(json!({
-            "id": response.id,
-            "status": response.status,
-            "details": response.details,
-        }))
+        Ok(response)
     }
 
     /// Returns a reference to the underlying `TeeClient` for direct access to lower-level operations.

@@ -122,7 +122,7 @@
 //!         vm_config, encrypted_env, pubkey, salt
 //!     ).await?;
 //!     
-//!     println!("Deployed successfully: {}", deployment["id"]);
+//!     println!("Deployed successfully: {}", deployment.id);
 //!     Ok(())
 //! }
 //! ```

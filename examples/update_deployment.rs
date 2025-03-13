@@ -61,7 +61,15 @@ async fn main() -> Result<()> {
     // ===== RESULT =====
     println!("\n✅ Deployment updated successfully!");
     println!("   New configuration applied to app ID: {}", app_id);
-    println!("   Update response: {:#?}", update_response);
+
+    // Access the strongly typed response if available, otherwise show raw JSON
+    if let Some(status) = update_response.get("status") {
+        println!("   Update status: {}", status);
+    }
+
+    if let Some(message) = update_response.get("message") {
+        println!("   Message: {}", message);
+    }
 
     Ok(())
 }

@@ -68,6 +68,13 @@ let result = deployer.deploy_compose_from_string(
     Some(10),   // Disk size (GB)
 ).await?;
 
+// Access the strongly typed response
+println!("Deployment ID: {}", result.id);
+println!("Deployment Status: {}", result.status);
+if let Some(details) = &result.details {
+    println!("TEEPod ID: {}", details.get("teepod_id").unwrap_or(&Value::Null));
+}
+
 // Option 2: Deploy from dockworker ComposeConfig
 let mut compose_config = ComposeConfig::default();
 // ... configure services programmatically ...
@@ -80,6 +87,10 @@ let result = deployer.deploy_compose(
     None, // Use default memory
     None, // Use default disk size
 ).await?;
+
+// Access the strongly typed response
+println!("Deployment ID: {}", result.id);
+println!("Deployment Status: {}", result.status);
 ```
 
 ### Low-Level API with TeeClient
@@ -114,16 +125,34 @@ let client = TeeClient::new(minimal_config)?;
 
 // 2. Get available TEEPods
 let teepods = client.get_available_teepods().await?;
-let teepod_id = teepods["nodes"][0]["teepod_id"].as_u64()?;
-let image = teepods["nodes"][0]["images"][0]["name"].as_str()?;
+let teepod_id = teepods.nodes[0].teepod_id;
+let image = &teepods.nodes[0].images[0].name;
 
-// 3. Prepare VM configuration
+// 3. Prepare VM configuration (using JSON for flexibility)
 let vm_config = json!({
     "name": "my-app",
-    "compose_manifest": { "docker_compose_file": docker_compose },
+    "compose_manifest": {
+        "docker_compose_file": docker_compose,
+        "name": "my-app",
+        "features": ["kms", "tproxy-net"]
+    },
+    "vcpu": 2,
+    "memory": 8192,
+    "disk_size": 40,
     "teepod_id": teepod_id,
-    "image": image
-    // Additional VM configuration...
+    "image": image,
+    "advanced_features": {
+        "tproxy": true,
+        "kms": true,
+        "public_sys_info": true,
+        "public_logs": true,
+        "docker_config": {
+            "username": "",
+            "password": "",
+            "registry": null
+        },
+        "listed": false
+    }
 });
 
 // 4. Get encryption keys
@@ -133,9 +162,13 @@ let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
 let deployment = client.deploy_with_config_do_encrypt(
     vm_config,
     &env_vars,
-    pubkey_response["app_env_encrypt_pubkey"].as_str()?,
-    pubkey_response["app_id_salt"].as_str()?
+    &pubkey_response.app_env_encrypt_pubkey,
+    &pubkey_response.app_id_salt
 ).await?;
+
+// Access the strongly typed response
+println!("Deployment ID: {}", deployment.id);
+println!("Deployment Status: {}", deployment.status);
 ```
 
 #### Pattern 3: Privilege Separation
@@ -182,7 +215,7 @@ let compose = client.get_compose(&app_id).await?;
 
 // 2. Modify configuration and environment variables
 let mut compose_file = compose.compose_file;
-compose_file["services"]["app"]["image"] = json!("new-image:tag");
+// Update compose file fields as needed...
 
 // 3. Apply update
 client.update_compose(
@@ -192,23 +225,3 @@ client.update_compose(
     compose.env_pubkey
 ).await?;
 ```
-
-## Examples
-
-See the `examples/` directory for full working examples:
-
-- `dockworker_integration.rs` - Using TeeDeployer with dockworker to manage deployments
-- `typescript_equivalent.rs` - Step-by-step deployment matching TypeScript workflow
-- `operator_user_flow.rs` - Privilege separation pattern
-- `update_deployment.rs` - Updating existing deployments
-
-## API Reference
-
-- `TeeDeployer` - High-level API for simplified deployment with dockworker integration
-- `DeploymentConfig` - Core configuration for deployments
-- `TeeClient` - Low-level API client with methods for deployment operations
-- `Encryptor` - Handles secure encryption of environment variables
-
-## License
-
-MIT License

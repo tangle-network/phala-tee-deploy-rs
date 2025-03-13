@@ -137,8 +137,8 @@ async fn test_get_available_teepods() {
     let client = TeeClient::new(config).unwrap();
     let result = client.get_available_teepods().await.unwrap();
 
-    assert_eq!(result["nodes"][0]["teepod_id"], 123);
-    assert_eq!(result["nodes"][0]["images"][0]["name"], "test-image:latest");
+    assert_eq!(result.nodes[0].teepod_id, 123);
+    assert_eq!(result.nodes[0].images[0].name, "test-image:latest");
 }
 
 #[tokio::test]
@@ -199,11 +199,8 @@ async fn test_get_pubkey_for_config() {
 
     let result = client.get_pubkey_for_config(&vm_config).await.unwrap();
 
-    assert_eq!(result["app_id_salt"], "test_salt");
-    assert!(result["app_env_encrypt_pubkey"]
-        .as_str()
-        .unwrap()
-        .starts_with("0x"));
+    assert_eq!(result.app_id_salt, "test_salt");
+    assert!(result.app_env_encrypt_pubkey.starts_with("0x"));
 }
 
 #[tokio::test]

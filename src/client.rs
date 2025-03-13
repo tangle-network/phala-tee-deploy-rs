@@ -108,15 +108,8 @@ impl TeeClient {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        let encrypted_env = Encryptor::encrypt_env_vars(
-            &env_vars,
-            &pubkey_response["app_env_encrypt_pubkey"]
-                .as_str()
-                .ok_or_else(|| Error::Api {
-                    status_code: 500,
-                    message: "Missing encryption public key".into(),
-                })?,
-        )?;
+        let encrypted_env =
+            Encryptor::encrypt_env_vars(&env_vars, &pubkey_response.app_env_encrypt_pubkey)?;
 
         // Create a mutable request body from vm_config
         let mut request_body = serde_json::to_value(&vm_config)
@@ -132,11 +125,11 @@ impl TeeClient {
         );
         request_body.insert(
             "app_env_encrypt_pubkey".to_string(),
-            pubkey_response["app_env_encrypt_pubkey"].clone(),
+            serde_json::Value::String(pubkey_response.app_env_encrypt_pubkey.clone()),
         );
         request_body.insert(
             "app_id_salt".to_string(),
-            pubkey_response["app_id_salt"].clone(),
+            serde_json::Value::String(pubkey_response.app_id_salt.clone()),
         );
 
         // Create deployment
@@ -181,7 +174,7 @@ impl TeeClient {
     /// # Errors
     ///
     /// Returns an error if the API request fails or returns an error
-    async fn get_pubkey(&self, vm_config: &VmConfig) -> Result<serde_json::Value, Error> {
+    async fn get_pubkey(&self, vm_config: &VmConfig) -> Result<PubkeyResponse, Error> {
         let response = self
             .client
             .post(format!(
@@ -201,7 +194,10 @@ impl TeeClient {
             });
         }
 
-        response.json().await.map_err(Error::HttpClient)
+        response
+            .json::<PubkeyResponse>()
+            .await
+            .map_err(Error::HttpClient)
     }
 
     /// Retrieves the current Docker Compose configuration for an application.

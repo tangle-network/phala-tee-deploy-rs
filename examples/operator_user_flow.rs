@@ -30,8 +30,8 @@ async fn main() -> Result<(), Error> {
     // 1. Get available infrastructure
     println!("🔷 OPERATOR: Discovering available TEEPods");
     let teepods = client.get_available_teepods().await?;
-    let teepod_id = teepods["nodes"][0]["teepod_id"].as_u64().unwrap();
-    let image = teepods["nodes"][0]["images"][0]["name"].as_str().unwrap();
+    let teepod_id = teepods.nodes[0].teepod_id;
+    let image = teepods.nodes[0].images[0].name.clone();
     println!("      Using TEEPod ID: {}", teepod_id);
 
     // 2. Define application structure (without secrets)
@@ -57,8 +57,8 @@ services:
     // 3. Get encryption key
     println!("🔷 OPERATOR: Obtaining encryption key from Phala Cloud");
     let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
-    let pubkey = pubkey_response["app_env_encrypt_pubkey"].as_str().unwrap();
-    let salt = pubkey_response["app_id_salt"].as_str().unwrap();
+    let pubkey = pubkey_response.app_env_encrypt_pubkey;
+    let salt = pubkey_response.app_id_salt;
 
     // 4. Securely share public key with user
     println!("🔷 OPERATOR: Sending public key to user via secure channel\n");
@@ -90,7 +90,7 @@ services:
     // 5. Deploy with VM config and environment variables (encrypted internally)
     println!("🔷 OPERATOR: Deploying application with encrypted environment");
     let deployment = client
-        .deploy_with_config_do_encrypt(vm_config, &sensitive_env_vars, pubkey, salt)
+        .deploy_with_config_do_encrypt(vm_config, &sensitive_env_vars, &pubkey, &salt)
         .await?;
 
     // ============ RESULT ============

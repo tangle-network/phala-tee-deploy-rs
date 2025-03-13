@@ -1,6 +1,6 @@
 use dockworker::config::compose::{ComposeConfig, Service};
 use dockworker::config::volume::Volume;
-use phala_tee_deploy_rs::{TeeDeployer, TeeDeployerBuilder};
+use phala_tee_deploy_rs::TeeDeployerBuilder;
 use std::collections::HashMap;
 use std::env;
 
@@ -94,8 +94,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     println!("✅ Deployment successful!");
-    println!("    ID: {}", result["id"]);
-    println!("    Status: {}\n", result["status"]);
+    println!("    ID: {}", result.id);
+    println!("    Status: {}", result.status);
 
     // ===== APPROACH 2: Deploy from a Docker Compose file string =====
     println!("\nMethod 2: Deploying from a Docker Compose YAML string");
@@ -136,8 +136,8 @@ services:
         .await?;
 
     println!("✅ Deployment successful!");
-    println!("    ID: {}", result["id"]);
-    println!("    Status: {}\n", result["status"]);
+    println!("    ID: {}", result.id);
+    println!("    Status: {}", result.status);
 
     println!("\n=== All deployments completed successfully ===");
 

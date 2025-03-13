@@ -56,9 +56,11 @@ services:
         Some(10),   // 10 GB disk
     )?;
 
+    let vm_config_json = serde_json::to_value(&vm_config).unwrap();
+
     // Get the public key for this VM configuration
     println!("🔑 Requesting encryption public key...");
-    let pubkey_response = deployer.get_pubkey_for_config(&vm_config).await?;
+    let pubkey_response = deployer.get_pubkey_for_config(&vm_config_json).await?;
 
     let public_key = pubkey_response.app_env_encrypt_pubkey;
     let salt = pubkey_response.app_id_salt;
@@ -100,12 +102,10 @@ services:
     // Deploy with the VM configuration and encrypted environment variables
     println!("🚀 Deploying application...");
     let deployment = deployer
-        .deploy_with_encrypted_env(vm_config, encrypted_env, &public_key, &salt)
+        .deploy_with_encrypted_env(vm_config_json, encrypted_env, &public_key, &salt)
         .await?;
 
-    println!("\n✅ Deployment successful!");
-    println!("Deployment ID: {}", deployment["id"]);
-    println!("Status: {}", deployment["status"]);
+    println!("\n✅ Deployment successful! {:#?}", deployment);
 
     Ok(())
 }

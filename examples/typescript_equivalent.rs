@@ -54,25 +54,41 @@ services:
       - /var/run/tappd.sock:/var/run/tappd.sock
 "#;
 
-    // Create VM configuration
+    // Create VM configuration using JSON for flexibility
     let vm_config = json!({
         "name": "test-deployment",
         "compose_manifest": {
             "docker_compose_file": docker_compose,
-            "name": "test-deployment"
+            "name": "test-deployment",
+            "features": ["kms", "tproxy-net"]
         },
         "vcpu": 1,
         "memory": 1024,
         "disk_size": 10,
         "teepod_id": teepod_id,
-        "image": image
+        "image": image,
+        "advanced_features": {
+            "tproxy": true,
+            "kms": true,
+            "public_sys_info": true,
+            "public_logs": true,
+            "docker_config": {
+                "username": "",
+                "password": "",
+                "registry": null
+            },
+            "listed": false
+        }
     });
 
     // ===== PHASE 3: OBTAIN ENCRYPTION KEYS =====
     println!("3. Obtaining encryption public key...");
     let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
-    let pubkey = pubkey_response.app_env_encrypt_pubkey;
-    let salt = pubkey_response.app_id_salt;
+
+    // Access the strongly typed response
+    let pubkey = &pubkey_response.app_env_encrypt_pubkey;
+    let salt = &pubkey_response.app_id_salt;
+    println!("   Received public key: {}", pubkey);
 
     // ===== PHASE 4: PREPARE AND ENCRYPT ENVIRONMENT =====
     println!("4. Preparing environment variables...");
@@ -84,13 +100,19 @@ services:
     // ===== PHASE 5: DEPLOY =====
     println!("5. Deploying to TEE environment...");
     let deployment = client
-        .deploy_with_config_do_encrypt(vm_config, &env_vars, &pubkey, &salt)
+        .deploy_with_config_do_encrypt(vm_config, &env_vars, pubkey, salt)
         .await?;
 
     // ===== RESULT =====
     println!("\n✅ Deployment successful!");
     println!("   ID: {}", deployment.id);
     println!("   Status: {}", deployment.status);
+
+    if let Some(details) = &deployment.details {
+        if let Some(app_id) = details.get("app_id") {
+            println!("   App ID: {}", app_id);
+        }
+    }
 
     Ok(())
 }

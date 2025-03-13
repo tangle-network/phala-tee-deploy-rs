@@ -47,4 +47,10 @@ pub enum Error {
     /// in an unexpected format.
     #[error("Invalid key format: {0}")]
     InvalidKey(String),
+
+    /// Serialization errors.
+    ///
+    /// These errors occur when serializing or deserializing data.
+    #[error("Serialization error: {0}")]
+    Serialization(String),
 }

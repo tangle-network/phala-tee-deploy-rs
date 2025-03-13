@@ -55,8 +55,8 @@ services:
     println!("Step 2: Retrieving public key for encryption");
     let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
 
-    let public_key = pubkey_response["app_env_encrypt_pubkey"].as_str().unwrap();
-    let salt = pubkey_response["app_id_salt"].as_str().unwrap();
+    let public_key = pubkey_response.app_env_encrypt_pubkey;
+    let salt = pubkey_response.app_id_salt;
 
     println!("Retrieved public key: {}", public_key);
     println!("Retrieved salt: {}", salt);
@@ -76,12 +76,12 @@ services:
         ("API_KEY".to_string(), "user-api-key-456".to_string()),
     ];
     // Encrypt the environment variables
-    let encrypted_env = Encryptor::encrypt_env_vars(&user_secrets, public_key)?;
+    let encrypted_env = Encryptor::encrypt_env_vars(&user_secrets, &public_key)?;
 
     // STEP 4: Call /cvms/from_cvm_configuration with the VM config and encrypted env
     println!("Step 4: Deploying with the VM configuration and encrypted environment");
     let deployment = client
-        .deploy_with_config_encrypted_env(vm_config, encrypted_env, public_key, salt)
+        .deploy_with_config_encrypted_env(vm_config, encrypted_env, &public_key, &salt)
         .await?;
 
     println!("\nDeployment successful!");
