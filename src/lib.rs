@@ -27,7 +27,7 @@
 //!         .build()?;
 //!
 //!     // Discover available TEEPods
-//!     deployer.discover_teepod().await?;
+//!     let teepods = deployer.discover_teepod().await?;
 //!
 //!     // Define environment variables (will be encrypted)
 //!     let mut env_vars = HashMap::new();
@@ -41,7 +41,6 @@
 //!         "my-webapp",
 //!         env_vars,
 //!         Some(vec!["80:80".to_string()]),
-//!         None,
 //!         None,
 //!         None,
 //!         None,
@@ -67,7 +66,7 @@
 //! This library supports a secure workflow pattern that separates infrastructure management from sensitive data:
 //!
 //! ```rust,no_run
-//! use phala_tee_deploy_rs::{Encryptor, Result, TeeDeployerBuilder};
+//! use phala_tee_deploy_rs::{Encryptor, Result, TeeDeployerBuilder, PubkeyResponse};
 //!
 //! // OPERATOR PHASE 1: Setup infrastructure and get public key
 //! async fn operator_setup() -> Result<(serde_json::Value, String, String)> {
@@ -75,7 +74,7 @@
 //!         .with_api_key("operator-api-key")
 //!         .build()?;
 //!
-//!     deployer.discover_teepod().await?;
+//!     let teepods = deployer.discover_teepod().await?;
 //!     
 //!     // Create VM configuration
 //!     let vm_config = deployer.create_vm_config_from_string(
@@ -85,9 +84,9 @@
 //!     )?;
 //!     
 //!     // Get encryption public key
-//!     let pubkey_response = deployer.get_pubkey_for_config(&vm_config).await?;
-//!     let pubkey = pubkey_response["app_env_encrypt_pubkey"].as_str().unwrap().to_string();
-//!     let salt = pubkey_response["app_id_salt"].as_str().unwrap().to_string();
+//!     let pubkey_response: PubkeyResponse = deployer.get_pubkey_for_config(&vm_config).await?;
+//!     let pubkey = pubkey_response.app_env_encrypt_pubkey;
+//!     let salt = pubkey_response.app_id_salt;
 //!     
 //!     // Return VM config and encryption keys (to be sent to user)
 //!     Ok((vm_config, pubkey, salt))
