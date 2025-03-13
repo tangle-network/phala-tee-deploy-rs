@@ -27,10 +27,7 @@ async fn main() -> Result<()> {
     let teepods = client.get_available_teepods().await?;
 
     // Ensure we have TEEPods available
-    if teepods["nodes"]
-        .as_array()
-        .map_or(true, |nodes| nodes.is_empty())
-    {
+    if teepods.nodes.is_empty() {
         return Err(Error::Api {
             status_code: 400,
             message: "No available TEEPods found".into(),
@@ -38,11 +35,9 @@ async fn main() -> Result<()> {
     }
 
     // Select the first available TEEPod and image
-    let node = &teepods["nodes"][0];
-    let teepod_id = node["teepod_id"].as_u64().expect("Invalid TEEPod ID");
-    let image = node["images"][0]["name"]
-        .as_str()
-        .expect("Invalid image name");
+    let node = &teepods.nodes[0];
+    let teepod_id = node.teepod_id;
+    let image = node.images[0].name.clone();
     println!("   Selected TEEPod ID: {}, Image: {}", teepod_id, image);
 
     // ===== PHASE 2: PREPARE CONFIGURATION =====
@@ -76,8 +71,8 @@ services:
     // ===== PHASE 3: OBTAIN ENCRYPTION KEYS =====
     println!("3. Obtaining encryption public key...");
     let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
-    let pubkey = pubkey_response["app_env_encrypt_pubkey"].as_str().unwrap();
-    let salt = pubkey_response["app_id_salt"].as_str().unwrap();
+    let pubkey = pubkey_response.app_env_encrypt_pubkey;
+    let salt = pubkey_response.app_id_salt;
 
     // ===== PHASE 4: PREPARE AND ENCRYPT ENVIRONMENT =====
     println!("4. Preparing environment variables...");
@@ -89,7 +84,7 @@ services:
     // ===== PHASE 5: DEPLOY =====
     println!("5. Deploying to TEE environment...");
     let deployment = client
-        .deploy_with_config_do_encrypt(vm_config, &env_vars, pubkey, salt)
+        .deploy_with_config_do_encrypt(vm_config, &env_vars, &pubkey, &salt)
         .await?;
 
     // ===== RESULT =====

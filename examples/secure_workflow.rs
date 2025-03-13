@@ -60,13 +60,8 @@ services:
     println!("🔑 Requesting encryption public key...");
     let pubkey_response = deployer.get_pubkey_for_config(&vm_config).await?;
 
-    let public_key = pubkey_response["app_env_encrypt_pubkey"]
-        .as_str()
-        .expect("Missing public key in response");
-
-    let salt = pubkey_response["app_id_salt"]
-        .as_str()
-        .expect("Missing salt in response");
+    let public_key = pubkey_response.app_env_encrypt_pubkey;
+    let salt = pubkey_response.app_id_salt;
 
     println!("✅ Public key obtained: {}", public_key);
     println!("✅ Salt obtained: {}", salt);
@@ -90,7 +85,7 @@ services:
 
     // User encrypts their environment variables with the public key
     println!("🔐 Encrypting environment variables...");
-    let encrypted_env = Encryptor::encrypt_env_vars(&user_env_vars, public_key)?;
+    let encrypted_env = Encryptor::encrypt_env_vars(&user_env_vars, &public_key)?;
     println!("✅ Environment variables encrypted successfully");
 
     // At this point, the user would securely send the encrypted env vars back to the operator
@@ -105,7 +100,7 @@ services:
     // Deploy with the VM configuration and encrypted environment variables
     println!("🚀 Deploying application...");
     let deployment = deployer
-        .deploy_with_encrypted_env(vm_config, encrypted_env, public_key, salt)
+        .deploy_with_encrypted_env(vm_config, encrypted_env, &public_key, &salt)
         .await?;
 
     println!("\n✅ Deployment successful!");

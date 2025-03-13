@@ -8,6 +8,7 @@ use crate::{
     crypto::Encryptor,
     error::Error,
     types::{ComposeResponse, DeploymentResponse, VmConfig},
+    PubkeyResponse, TeePodDiscoveryResponse,
 };
 
 /// Client for interacting with the Phala TEE Cloud API.
@@ -312,7 +313,7 @@ impl TeeClient {
     /// * The network request fails (timeout, connection issues, etc.)
     /// * The API returns an error response
     /// * The response cannot be parsed as valid JSON
-    pub async fn get_available_teepods(&self) -> Result<serde_json::Value, Error> {
+    pub async fn get_available_teepods(&self) -> Result<TeePodDiscoveryResponse, Error> {
         // Construct request URL
         let request_url = format!("{}/teepods/available", self.config.api_url);
 
@@ -387,7 +388,7 @@ impl TeeClient {
     pub async fn get_pubkey_for_config(
         &self,
         vm_config: &serde_json::Value,
-    ) -> Result<serde_json::Value, Error> {
+    ) -> Result<PubkeyResponse, Error> {
         let response = self
             .client
             .post(format!(

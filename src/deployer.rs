@@ -1,4 +1,4 @@
-use crate::{DeploymentConfig, Error, Result, TeeClient};
+use crate::{DeploymentConfig, Error, PubkeyResponse, Result, TeeClient, TeePodDiscoveryResponse};
 use dockworker::config::compose::{ComposeConfig, Service};
 use dockworker::config::EnvironmentVars;
 use serde_json::{json, Value};
@@ -109,7 +109,7 @@ impl TeeDeployer {
     /// * The API request fails
     /// * No TEEPods are available
     /// * The API response has an unexpected format
-    pub async fn discover_teepod(&mut self) -> Result<()> {
+    pub async fn discover_teepod(&mut self) -> Result<TeePodDiscoveryResponse> {
         eprintln!("🔍 Discovering available TEEPods...");
 
         let teepods = match self.client.get_available_teepods().await {
@@ -134,10 +134,9 @@ impl TeeDeployer {
             }
         };
 
-        let nodes = teepods["nodes"].as_array().ok_or_else(|| Error::Api {
-            status_code: 400,
-            message: "Invalid response format: 'nodes' is not an array".into(),
-        })?;
+        eprintln!("🔍 TEEPods found: {:?}", teepods);
+
+        let nodes = teepods.nodes.clone();
 
         if nodes.is_empty() {
             return Err(Error::Api {
@@ -147,25 +146,16 @@ impl TeeDeployer {
         }
 
         let node = &nodes[0];
-        let teepod_id = node["teepod_id"].as_u64().ok_or_else(|| Error::Api {
-            status_code: 400,
-            message: "Invalid TEEPod ID format".into(),
-        })?;
+        let teepod_id = node.teepod_id;
 
-        let image = node["images"][0]["name"]
-            .as_str()
-            .ok_or_else(|| Error::Api {
-                status_code: 400,
-                message: "Invalid image name format".into(),
-            })?
-            .to_string();
+        let image = node.images[0].name.clone();
 
         eprintln!(
             "✅ TEEPod discovered: ID {} with image {}",
             teepod_id, image
         );
         self.selected_teepod = Some((teepod_id, image));
-        Ok(())
+        Ok(teepods)
     }
 
     /// Selects a specific TEEPod by ID and verifies its availability.
@@ -212,26 +202,15 @@ impl TeeDeployer {
             }
         };
 
-        let nodes = teepods["nodes"].as_array().ok_or_else(|| Error::Api {
-            status_code: 400,
-            message: "Invalid response format: 'nodes' is not an array".into(),
-        })?;
+        let nodes = teepods.nodes.clone();
 
         for node in nodes {
-            if let Some(id) = node["teepod_id"].as_u64() {
-                if id == teepod_id {
-                    let image = node["images"][0]["name"]
-                        .as_str()
-                        .ok_or_else(|| Error::Api {
-                            status_code: 400,
-                            message: "Invalid image name format".into(),
-                        })?
-                        .to_string();
+            if node.teepod_id == teepod_id {
+                let image = node.images[0].name.clone();
 
-                    eprintln!("✅ TEEPod selected: ID {} with image {}", teepod_id, image);
-                    self.selected_teepod = Some((teepod_id, image));
-                    return Ok(());
-                }
+                eprintln!("✅ TEEPod selected: ID {} with image {}", teepod_id, image);
+                self.selected_teepod = Some((teepod_id, image));
+                return Ok(());
             }
         }
 
@@ -306,24 +285,13 @@ impl TeeDeployer {
 
         // Get encryption keys
         let pubkey_response = self.client.get_pubkey_for_config(&vm_config).await?;
-        let pubkey = pubkey_response["app_env_encrypt_pubkey"]
-            .as_str()
-            .ok_or_else(|| Error::Api {
-                status_code: 400,
-                message: "Missing public key in response".into(),
-            })?;
-
-        let salt = pubkey_response["app_id_salt"]
-            .as_str()
-            .ok_or_else(|| Error::Api {
-                status_code: 400,
-                message: "Missing salt in response".into(),
-            })?;
+        let pubkey = pubkey_response.app_env_encrypt_pubkey;
+        let salt = pubkey_response.app_id_salt;
 
         // Deploy with encrypted environment variables
         let deployment = self
             .client
-            .deploy_with_config_do_encrypt(vm_config, &env_vars_vec, pubkey, salt)
+            .deploy_with_config_do_encrypt(vm_config, &env_vars_vec, &pubkey, &salt)
             .await?;
 
         Ok(json!({
@@ -705,7 +673,7 @@ impl TeeDeployer {
     /// # Errors
     ///
     /// Returns an error if the API request fails
-    pub async fn get_pubkey_for_config(&self, vm_config: &Value) -> Result<Value> {
+    pub async fn get_pubkey_for_config(&self, vm_config: &Value) -> Result<PubkeyResponse> {
         self.client
             .get_pubkey_for_config(vm_config)
             .await
