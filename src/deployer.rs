@@ -138,8 +138,6 @@ impl TeeDeployer {
             }
         };
 
-        eprintln!("🔍 TEEPods found: {:?}", teepods);
-
         let nodes = teepods.nodes.clone();
 
         if nodes.is_empty() {
