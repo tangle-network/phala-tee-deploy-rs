@@ -287,7 +287,7 @@ impl TeeDeployer {
         // Deploy with encrypted environment variables
         let deployment = self
             .client
-            .deploy_with_config_do_encrypt(vm_config, &env_vars_vec, &pubkey)
+            .deploy_with_config_do_encrypt(vm_config, &env_vars_vec, &pubkey, &salt)
             .await?;
 
         // Add extra details if needed
@@ -658,6 +658,7 @@ impl TeeDeployer {
     /// * `vm_config` - The VM configuration as a JSON value
     /// * `encrypted_env` - Pre-encrypted environment variables as a hex string
     /// * `app_env_encrypt_pubkey` - The public key used for encryption
+    /// * `app_id_salt` - The salt value used for encryption
     ///
     /// # Returns
     ///
@@ -671,10 +672,16 @@ impl TeeDeployer {
         vm_config: Value,
         encrypted_env: String,
         app_env_encrypt_pubkey: &str,
+        app_id_salt: &str,
     ) -> Result<DeploymentResponse> {
         let response = self
             .client
-            .deploy_with_config_encrypted_env(vm_config, encrypted_env, app_env_encrypt_pubkey)
+            .deploy_with_config_encrypted_env(
+                vm_config,
+                encrypted_env,
+                app_env_encrypt_pubkey,
+                app_id_salt,
+            )
             .await?;
 
         Ok(response)

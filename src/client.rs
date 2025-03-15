@@ -415,6 +415,7 @@ impl TeeClient {
     /// * `vm_config` - The VM configuration as a JSON value
     /// * `env_vars` - Environment variables to encrypt and include in the deployment
     /// * `app_env_encrypt_pubkey` - The public key for encrypting environment variables
+    /// * `app_id_salt` - The salt value for encryption
     ///
     /// # Returns
     ///
@@ -431,12 +432,18 @@ impl TeeClient {
         vm_config: serde_json::Value,
         env_vars: &[(String, String)],
         app_env_encrypt_pubkey: &str,
+        app_id_salt: &str,
     ) -> Result<DeploymentResponse, Error> {
         // Encrypt environment variables
         let encrypted_env = Encryptor::encrypt_env_vars(env_vars, app_env_encrypt_pubkey)?;
 
-        self.deploy_with_config_encrypted_env(vm_config, encrypted_env, app_env_encrypt_pubkey)
-            .await
+        self.deploy_with_config_encrypted_env(
+            vm_config,
+            encrypted_env,
+            app_env_encrypt_pubkey,
+            app_id_salt,
+        )
+        .await
     }
 
     /// Deploys a container with a custom VM configuration and pre-encrypted environment variables.
@@ -463,6 +470,7 @@ impl TeeClient {
         vm_config: serde_json::Value,
         encrypted_env: String,
         app_env_encrypt_pubkey: &str,
+        app_id_salt: &str,
     ) -> Result<DeploymentResponse, Error> {
         // Create a mutable request body
         let mut request_body = vm_config.as_object().cloned().unwrap_or_default();
@@ -475,6 +483,10 @@ impl TeeClient {
         request_body.insert(
             "app_env_encrypt_pubkey".to_string(),
             serde_json::Value::String(app_env_encrypt_pubkey.to_string()),
+        );
+        request_body.insert(
+            "app_id_salt".to_string(),
+            serde_json::Value::String(app_id_salt.to_string()),
         );
 
         println!("request_body: {:#?}", request_body);
