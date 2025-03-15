@@ -119,7 +119,7 @@
 //!
 //!     // Deploy with encrypted environment variables
 //!     let deployment = deployer.deploy_with_encrypted_env(
-//!         vm_config, encrypted_env, pubkey, salt
+//!         vm_config, encrypted_env, pubkey
 //!     ).await?;
 //!     
 //!     println!("Deployed successfully: {}", deployment.id);

@@ -107,7 +107,7 @@ services:
     // ===== PHASE 5: DEPLOY =====
     println!("5. Deploying to TEE environment...");
     let deployment = client
-        .deploy_with_config_do_encrypt(vm_config, &env_vars, pubkey, salt)
+        .deploy_with_config_do_encrypt(vm_config, &env_vars, pubkey)
         .await?;
 
     // ===== RESULT =====
