@@ -194,7 +194,7 @@ let encrypted_env = receive_from_user();
 
 // 6. Deploy with encrypted environment
 client.deploy_with_config_encrypted_env(
-    vm_config, encrypted_env, pubkey, salt
+    vm_config, encrypted_env, pubkey
 ).await?;
 
 // USER: Has secrets, doesn't need API access

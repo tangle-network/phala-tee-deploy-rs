@@ -87,7 +87,7 @@ services:
     // STEP 4: Call /cvms/from_cvm_configuration with the VM config and encrypted env
     println!("Step 4: Deploying with the VM configuration and encrypted environment");
     let deployment = client
-        .deploy_with_config_encrypted_env(vm_config, encrypted_env, &public_key, &salt)
+        .deploy_with_config_encrypted_env(vm_config, encrypted_env, &public_key)
         .await?;
 
     println!("\nDeployment successful!");
