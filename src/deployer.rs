@@ -603,16 +603,16 @@ impl TeeDeployer {
             teepod_id: *teepod_id,
             image: image.to_string(),
             advanced_features: AdvancedFeatures {
-                tproxy: false,
-                kms: false,
-                public_sys_info: false,
-                public_logs: false,
+                tproxy: true,
+                kms: true,
+                public_sys_info: true,
+                public_logs: true,
                 docker_config: DockerConfig {
                     username: String::new(),
                     password: String::new(),
                     registry: None,
                 },
-                listed: false,
+                listed: true,
             },
         };
 
