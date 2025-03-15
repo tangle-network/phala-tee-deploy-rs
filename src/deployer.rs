@@ -3,8 +3,6 @@ use crate::{
     NetworkInfoResponse, PubkeyResponse, Result, SystemStatsResponse, TeeClient,
     TeePodDiscoveryResponse, VmConfig,
 };
-use dockworker::config::compose::{ComposeConfig, Service};
-use dockworker::config::EnvironmentVars;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::Path;
@@ -12,8 +10,9 @@ use std::path::Path;
 /// `TeeDeployer` provides a high-level interface for deploying Docker Compose applications
 /// to the Phala TEE Cloud platform.
 ///
-/// This struct integrates with the `dockworker` library to simplify configuration management
-/// and offers a more ergonomic API compared to the lower-level `TeeClient`.
+/// This struct provides a simplified API for deploying applications compared to the
+/// lower-level `TeeClient`, with methods for common deployment scenarios and
+/// configuration management using standard JSON.
 ///
 /// # Features
 ///
@@ -223,14 +222,14 @@ impl TeeDeployer {
         })
     }
 
-    /// Deploys a Docker Compose application using a `ComposeConfig` from dockworker.
+    /// Deploys a Docker Compose application using a YAML string configuration.
     ///
-    /// This method takes a pre-configured `ComposeConfig` object and deploys it to the
+    /// This method takes a Docker Compose configuration as a string and deploys it to the
     /// selected TEEPod with the specified options.
     ///
     /// # Parameters
     ///
-    /// * `compose_config` - The Docker Compose configuration to deploy
+    /// * `docker_compose_file` - The Docker Compose configuration as a YAML string
     /// * `app_name` - Name for the deployed application
     /// * `env_vars` - Environment variables for the application (will be securely encrypted)
     /// * `vcpu` - Optional vCPU cores for the VM (defaults to 1)
@@ -246,11 +245,10 @@ impl TeeDeployer {
     /// Returns an error if:
     /// * No TEEPod has been selected
     /// * The API request fails
-    /// * The compose configuration cannot be serialized
     /// * Environment variable encryption fails
     pub async fn deploy_compose(
         &self,
-        compose_config: &ComposeConfig,
+        docker_compose_file: &str,
         app_name: &str,
         env_vars: HashMap<String, String>,
         vcpu: Option<u64>,
@@ -263,17 +261,13 @@ impl TeeDeployer {
             message: "No TEEPod selected. Call discover_teepod() or select_teepod() first".into(),
         })?;
 
-        // Convert ComposeConfig to YAML
-        let docker_compose_file = serde_yaml::to_string(compose_config).map_err(|e| {
-            Error::Configuration(format!("Failed to serialize compose config: {}", e))
-        })?;
-
         // Create VM configuration
         let vm_config = json!({
             "name": app_name,
             "compose_manifest": {
                 "docker_compose_file": docker_compose_file,
-                "name": app_name
+                "name": app_name,
+                "features": ["kms", "tproxy-net"]
             },
             "vcpu": vcpu.unwrap_or(1),
             "memory": memory.unwrap_or(1024),
@@ -330,8 +324,7 @@ impl TeeDeployer {
 
     /// Deploys a Docker Compose application from a file path.
     ///
-    /// Reads a Docker Compose file from the specified path, parses it,
-    /// and deploys it to the selected TEEPod.
+    /// Reads a Docker Compose file from the specified path and deploys it to the selected TEEPod.
     ///
     /// # Parameters
     ///
@@ -349,7 +342,7 @@ impl TeeDeployer {
     /// # Errors
     ///
     /// Returns an error if:
-    /// * The file cannot be read or parsed
+    /// * The file cannot be read
     /// * The underlying `deploy_compose` call fails
     pub async fn deploy_compose_from_file<P: AsRef<Path>>(
         &self,
@@ -360,20 +353,17 @@ impl TeeDeployer {
         memory: Option<u64>,
         disk_size: Option<u64>,
     ) -> Result<DeploymentResponse> {
-        // Read and parse compose file
+        // Read compose file
         let content = std::fs::read_to_string(compose_path)
             .map_err(|e| Error::Configuration(format!("Failed to read compose file: {}", e)))?;
 
-        let compose_config: ComposeConfig = serde_yaml::from_str(&content)
-            .map_err(|e| Error::Configuration(format!("Failed to parse compose file: {}", e)))?;
-
-        self.deploy_compose(&compose_config, app_name, env_vars, vcpu, memory, disk_size)
+        self.deploy_compose(&content, app_name, env_vars, vcpu, memory, disk_size)
             .await
     }
 
     /// Deploys a Docker Compose application from a YAML string.
     ///
-    /// Parses a Docker Compose YAML string and deploys it to the selected TEEPod.
+    /// Takes a Docker Compose YAML string and deploys it to the selected TEEPod.
     ///
     /// # Parameters
     ///
@@ -390,9 +380,7 @@ impl TeeDeployer {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// * The YAML cannot be parsed
-    /// * The underlying `deploy_compose` call fails
+    /// Returns an error if the underlying `deploy_compose` call fails
     pub async fn deploy_compose_from_string(
         &self,
         yaml_content: &str,
@@ -402,11 +390,7 @@ impl TeeDeployer {
         memory: Option<u64>,
         disk_size: Option<u64>,
     ) -> Result<DeploymentResponse> {
-        // Parse compose content
-        let compose_config: ComposeConfig = serde_yaml::from_str(yaml_content)
-            .map_err(|e| Error::Configuration(format!("Failed to parse compose content: {}", e)))?;
-
-        self.deploy_compose(&compose_config, app_name, env_vars, vcpu, memory, disk_size)
+        self.deploy_compose(yaml_content, app_name, env_vars, vcpu, memory, disk_size)
             .await
     }
 
@@ -448,42 +432,45 @@ impl TeeDeployer {
         memory: Option<u64>,
         disk_size: Option<u64>,
     ) -> Result<DeploymentResponse> {
-        // Create a simple service configuration
-        let mut service = Service::default();
-        service.image = Some(image.to_string());
+        // Create a simple Docker Compose YAML configuration
+        let mut yaml = String::from("services:\n");
+        yaml.push_str(&format!("  {}:\n", service_name));
+        yaml.push_str(&format!("    image: {}\n", image));
 
-        if let Some(ports) = ports {
-            service.ports = Some(ports);
+        if let Some(ports) = &ports {
+            yaml.push_str("    ports:\n");
+            for port in ports {
+                yaml.push_str(&format!("      - \"{}\"\n", port));
+            }
         }
 
-        if let Some(command) = command {
-            service.command = Some(command);
+        if let Some(volumes) = &volumes {
+            yaml.push_str("    volumes:\n");
+            for volume in volumes {
+                yaml.push_str(&format!("      - {}\n", volume));
+            }
         }
 
-        if let Some(volumes_str) = volumes {
-            use dockworker::config::volume::Volume;
-            let volumes = volumes_str
-                .iter()
-                .map(|v| Volume::Named(v.clone()))
-                .collect();
-            service.volumes = Some(volumes);
+        if let Some(command) = &command {
+            yaml.push_str("    command: [");
+            for (i, cmd) in command.iter().enumerate() {
+                if i > 0 {
+                    yaml.push_str(", ");
+                }
+                yaml.push_str(&format!("\"{}\"", cmd));
+            }
+            yaml.push_str("]\n");
         }
 
-        // Convert HashMap<String, String> to EnvironmentVars for dockworker
         if !env_vars.is_empty() {
-            // Create EnvironmentVars from HashMap
-            let env_vars_for_service: EnvironmentVars = env_vars.clone().into();
-            service.environment = Some(env_vars_for_service);
+            yaml.push_str("    environment:\n");
+            for (key, value) in &env_vars {
+                yaml.push_str(&format!("      {}: {}\n", key, value));
+            }
         }
-
-        // Create compose config
-        let mut compose_config = ComposeConfig::default();
-        compose_config
-            .services
-            .insert(service_name.to_string(), service);
 
         // Deploy
-        self.deploy_compose(&compose_config, app_name, env_vars, vcpu, memory, disk_size)
+        self.deploy_compose(&yaml, app_name, env_vars, vcpu, memory, disk_size)
             .await
     }
 
@@ -492,7 +479,7 @@ impl TeeDeployer {
     /// # Parameters
     ///
     /// * `app_id` - The ID of the application to update
-    /// * `compose_config` - Optional new Docker Compose configuration
+    /// * `compose_content` - Optional new Docker Compose configuration as a YAML string
     /// * `env_vars` - Optional new environment variables
     ///
     /// # Returns
@@ -503,12 +490,11 @@ impl TeeDeployer {
     ///
     /// Returns an error if:
     /// * The application cannot be found
-    /// * The new configuration cannot be serialized
     /// * The API request fails
     pub async fn update_deployment(
         &self,
         app_id: &str,
-        compose_config: Option<&ComposeConfig>,
+        compose_content: Option<&str>,
         env_vars: Option<HashMap<String, String>>,
     ) -> Result<Value> {
         // Get the current compose configuration
@@ -516,28 +502,18 @@ impl TeeDeployer {
         let mut compose_file = compose_response.compose_file;
 
         // Update compose file if provided
-        if let Some(new_config) = compose_config {
-            let yaml = serde_yaml::to_string(new_config).map_err(|e| {
-                Error::Configuration(format!("Failed to serialize compose config: {}", e))
-            })?;
-
+        if let Some(new_config) = compose_content {
             if let Some(manifest) = compose_file.get_mut("compose_manifest") {
                 if let Some(obj) = manifest.as_object_mut() {
-                    obj.insert("docker_compose_file".to_string(), json!(yaml));
+                    obj.insert("docker_compose_file".to_string(), json!(new_config));
                 }
             }
         }
 
-        // Apply the update - keep env_vars as HashMap<String, String>
-        // TeeClient.update_compose expects Option<HashMap<String, String>>
+        // Apply the update
         let response = self
             .client
-            .update_compose(
-                app_id,
-                compose_file,
-                env_vars, // Pass HashMap directly, no conversion needed
-                compose_response.env_pubkey,
-            )
+            .update_compose(app_id, compose_file, env_vars, compose_response.env_pubkey)
             .await?;
 
         Ok(json!({
@@ -554,7 +530,7 @@ impl TeeDeployer {
     ///
     /// # Parameters
     ///
-    /// * `compose_config` - The Docker Compose configuration to use
+    /// * `docker_compose_file` - The Docker Compose configuration as a YAML string
     /// * `app_name` - Name for the application
     /// * `vcpu` - Optional vCPU cores for the VM (defaults to 1)
     /// * `memory` - Optional memory in MB for the VM (defaults to 1024)
@@ -562,16 +538,14 @@ impl TeeDeployer {
     ///
     /// # Returns
     ///
-    /// A JSON value containing the VM configuration
+    /// A VM configuration object
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// * No TEEPod has been selected
-    /// * The compose configuration cannot be serialized
+    /// Returns an error if no TEEPod has been selected
     pub fn create_vm_config(
         &self,
-        compose_config: &ComposeConfig,
+        docker_compose_file: &str,
         app_name: &str,
         vcpu: Option<u64>,
         memory: Option<u64>,
@@ -583,18 +557,13 @@ impl TeeDeployer {
             message: "No TEEPod selected. Call discover_teepod() or select_teepod() first".into(),
         })?;
 
-        // Convert ComposeConfig to YAML
-        let docker_compose_file = serde_yaml::to_string(compose_config).map_err(|e| {
-            Error::Configuration(format!("Failed to serialize compose config: {}", e))
-        })?;
-
         // Create VM configuration
         let vm_config = VmConfig {
             name: app_name.to_string(),
             compose_manifest: ComposeManifest {
                 name: app_name.to_string(),
-                features: vec![],
-                docker_compose_file: docker_compose_file,
+                features: vec!["kms".to_string(), "tproxy-net".to_string()],
+                docker_compose_file: docker_compose_file.to_string(),
             },
             vcpu: vcpu.unwrap_or(1) as u32,
             memory: memory.unwrap_or(1024) as u32,
@@ -633,12 +602,12 @@ impl TeeDeployer {
     ///
     /// # Returns
     ///
-    /// A JSON value containing the VM configuration
+    /// A VM configuration object
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// * The file cannot be read or parsed
+    /// * The file cannot be read
     /// * The `create_vm_config` call fails
     pub fn create_vm_config_from_file<P: AsRef<Path>>(
         &self,
@@ -648,51 +617,11 @@ impl TeeDeployer {
         memory: Option<u64>,
         disk_size: Option<u64>,
     ) -> Result<VmConfig> {
-        // Read and parse compose file
+        // Read compose file
         let content = std::fs::read_to_string(compose_path)
             .map_err(|e| Error::Configuration(format!("Failed to read compose file: {}", e)))?;
 
-        let compose_config: ComposeConfig = serde_yaml::from_str(&content)
-            .map_err(|e| Error::Configuration(format!("Failed to parse compose file: {}", e)))?;
-
-        self.create_vm_config(&compose_config, app_name, vcpu, memory, disk_size)
-    }
-
-    /// Creates a VM configuration from a Docker Compose string.
-    ///
-    /// This is a convenience method that parses a Docker Compose string
-    /// and creates a VM configuration for it.
-    ///
-    /// # Parameters
-    ///
-    /// * `compose_content` - String containing Docker Compose configuration
-    /// * `app_name` - Name for the application
-    /// * `vcpu` - Optional vCPU cores for the VM
-    /// * `memory` - Optional memory in MB for the VM
-    /// * `disk_size` - Optional disk size in GB for the VM
-    ///
-    /// # Returns
-    ///
-    /// A JSON value containing the VM configuration
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// * The string cannot be parsed as valid Docker Compose
-    /// * The `create_vm_config` call fails
-    pub fn create_vm_config_from_string(
-        &self,
-        compose_content: &str,
-        app_name: &str,
-        vcpu: Option<u64>,
-        memory: Option<u64>,
-        disk_size: Option<u64>,
-    ) -> Result<VmConfig> {
-        // Parse compose content
-        let compose_config: ComposeConfig = serde_yaml::from_str(compose_content)
-            .map_err(|e| Error::Configuration(format!("Failed to parse compose content: {}", e)))?;
-
-        self.create_vm_config(&compose_config, app_name, vcpu, memory, disk_size)
+        self.create_vm_config(&content, app_name, vcpu, memory, disk_size)
     }
 
     /// Retrieves the encryption public key for a VM configuration.

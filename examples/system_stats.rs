@@ -1,4 +1,5 @@
 use phala_tee_deploy_rs::{Error, Result, SystemStatsResponse, TeeDeployer};
+use serde_json::json;
 use std::{collections::HashMap, env, time::Duration};
 
 /// This example demonstrates how to deploy an application and retrieve its system statistics
@@ -26,11 +27,13 @@ async fn main() -> Result<()> {
     println!("\n🔍 Discovering available TEEPods...");
     let teepods = deployer.discover_teepod().await?;
     println!("✅ Selected TEEPod with ID: {}", teepods.nodes[0].teepod_id);
+    let teepod_id = teepods.nodes[0].teepod_id;
+    let image = teepods.nodes[0].images[0].name.clone();
 
-    // Step 2: Create a Docker Compose configuration for the Phala Cloud NextJS starter
+    // Step 2: Create JSON VM configuration for the Phala Cloud NextJS starter
     println!("\n🚀 Preparing and deploying a test application...");
 
-    // Use the Phala Cloud NextJS starter configuration
+    // Define Docker Compose content
     let docker_compose = r#"
 services:
   app:
@@ -41,40 +44,51 @@ services:
       - /var/run/tappd.sock:/var/run/tappd.sock
 "#;
 
-    // Deploy using the Docker Compose configuration
-    let env_vars = HashMap::new();
-    let deployment = deployer
-        .deploy_compose_from_string(
-            &docker_compose,
-            "system-stats-test-app",
-            env_vars,
-            None,
-            None,
-            None,
+    // Create VM configuration using JSON directly
+    let vm_config = json!({
+        "name": "system-stats-test-app",
+        "compose_manifest": {
+            "docker_compose_file": docker_compose,
+            "name": "system-stats-test-app",
+            "features": ["kms", "tproxy-net"]
+        },
+        "vcpu": 1,
+        "memory": 1024,
+        "disk_size": 10,
+        "teepod_id": teepod_id,
+        "image": image
+    });
+
+    // Get the client from deployer for direct API access
+    let client = deployer.get_client();
+
+    // Step 3: Get encryption key
+    println!("🔑 Getting encryption public key...");
+    let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
+
+    // Extract app_id from pubkey response
+    let app_id = pubkey_response.app_id.clone();
+    println!("✅ Received public key for encryption");
+    println!("   App ID: {}", app_id);
+
+    // Step 4: Deploy application
+    println!("\n🚀 Deploying test application...");
+    let env_vars = vec![]; // Empty environment variables
+    let deployment = client
+        .deploy_with_config_do_encrypt(
+            vm_config,
+            &env_vars,
+            &pubkey_response.app_env_encrypt_pubkey,
+            &pubkey_response.app_id_salt,
         )
         .await?;
 
-    // Extract app_id from deployment response details
-    let app_id = if let Some(details) = &deployment.details {
-        if let Some(app_id) = details.get("app_id").and_then(|v| v.as_str()) {
-            app_id
-        } else {
-            return Err(Error::Configuration(
-                "App ID not found in deployment details. This is required for accessing system stats.".into(),
-            ));
-        }
-    } else {
-        return Err(Error::Configuration(
-            "Deployment response doesn't contain details with app_id. This is required for accessing system stats.".into(),
-        ));
-    };
-
     println!("✅ Application deployed successfully!");
     println!("   Deployment ID: {}", deployment.id);
-    println!("   App ID: {}", app_id);
+    println!("   App ID: {}", app_id); // Using app_id from pubkey_response
     println!("   Status: {}", deployment.status);
 
-    // Step 3: Wait for system to initialize (may take some time)
+    // Step 5: Wait for system to initialize (may take some time)
     println!("\n⏳ Waiting for system to initialize...");
     println!("   (This may take up to 60 seconds)");
 
@@ -87,7 +101,7 @@ services:
         attempts += 1;
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        match deployer.get_system_stats(app_id).await {
+        match deployer.get_system_stats(&app_id).await {
             Ok(stats) if stats.is_online => {
                 system_stats = Some(stats);
                 println!("✅ System is online and ready!");
@@ -111,7 +125,7 @@ services:
         }
     }
 
-    // Step 4: Display system statistics
+    // Step 6: Display system statistics
     println!(
         "\n📊 Retrieving system statistics for application ID: {}",
         app_id
@@ -124,7 +138,7 @@ services:
         None => {
             // Make one final attempt
             println!("   Making one final attempt to get system stats...");
-            let stats = deployer.get_system_stats(app_id).await?;
+            let stats = deployer.get_system_stats(&app_id).await?;
             display_system_stats(&stats);
         }
     }

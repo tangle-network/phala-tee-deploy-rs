@@ -32,7 +32,8 @@ async fn main() -> Result<()> {
 
     // Discover available TEEPods
     println!("🔍 Discovering available TEEPods...");
-    deployer.discover_teepod().await?;
+    let teepods = deployer.discover_teepod().await?;
+    println!("✅ Selected TEEPod with ID: {}", teepods.nodes[0].teepod_id);
 
     // Create VM configuration from Docker Compose content
     println!("📄 Creating VM configuration...");
@@ -48,7 +49,8 @@ services:
       - API_SECRET
 "#;
 
-    let vm_config = deployer.create_vm_config_from_string(
+    // Create VM configuration
+    let vm_config = deployer.create_vm_config(
         docker_compose,
         "secure-workflow-example",
         Some(1),    // 1 vCPU
@@ -64,9 +66,11 @@ services:
 
     let public_key = pubkey_response.app_env_encrypt_pubkey;
     let salt = pubkey_response.app_id_salt;
+    let app_id = pubkey_response.app_id.clone();
 
     println!("✅ Public key obtained: {}", public_key);
     println!("✅ Salt obtained: {}", salt);
+    println!("✅ App ID: {}", app_id);
 
     // At this point, the operator would securely send the public key to the user
     println!("\n======== SECURE CHANNEL ========");
@@ -105,7 +109,13 @@ services:
         .deploy_with_encrypted_env(vm_config_json, encrypted_env, &public_key, &salt)
         .await?;
 
-    println!("\n✅ Deployment successful! {:#?}", deployment);
+    println!("\n✅ Deployment successful!");
+    println!("   Deployment ID: {}", deployment.id);
+    println!("   App ID: {}", app_id);
+    println!("   Status: {}", deployment.status);
+
+    println!("\n✨ You can check the network information for your deployment using:");
+    println!("   cargo run --example network_info {}", app_id);
 
     Ok(())
 }
