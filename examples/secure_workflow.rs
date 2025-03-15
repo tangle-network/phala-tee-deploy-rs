@@ -109,13 +109,17 @@ services:
         .deploy_with_encrypted_env(vm_config_json, encrypted_env, &public_key, &salt)
         .await?;
 
+    // Construct the full application identifier with the required "app_" prefix
+    let full_app_id = format!("app_{}", app_id);
+
     println!("\n✅ Deployment successful!");
     println!("   Deployment ID: {}", deployment.id);
     println!("   App ID: {}", app_id);
+    println!("   Full Application Identifier: {}", full_app_id);
     println!("   Status: {}", deployment.status);
 
     println!("\n✨ You can check the network information for your deployment using:");
-    println!("   cargo run --example network_info {}", app_id);
+    println!("   cargo run --example network_info {}", full_app_id);
 
     Ok(())
 }

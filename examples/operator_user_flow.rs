@@ -59,6 +59,10 @@ services:
     let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
     let pubkey = pubkey_response.app_env_encrypt_pubkey;
     let salt = pubkey_response.app_id_salt;
+    let app_id = pubkey_response.app_id.clone();
+
+    // Construct the full application identifier with the required "app_" prefix
+    let full_app_id = format!("app_{}", app_id);
 
     // 4. Securely share public key with user
     println!("🔷 OPERATOR: Sending public key to user via secure channel\n");
@@ -96,8 +100,13 @@ services:
     // ============ RESULT ============
     println!("\n✅ Deployment successful!");
     println!("   ID: {}", deployment.id);
+    println!("   App ID: {}", app_id);
+    println!("   Full Application Identifier: {}", full_app_id);
     println!("   Status: {}", deployment.status);
     println!("\n🔒 Security benefit: Neither party had access to both API keys and secrets");
+
+    println!("\n🔍 To check your deployment status:");
+    println!("   cargo run --example network_info {}", full_app_id);
 
     Ok(())
 }

@@ -88,7 +88,14 @@ services:
     // Access the strongly typed response
     let pubkey = &pubkey_response.app_env_encrypt_pubkey;
     let salt = &pubkey_response.app_id_salt;
+    let app_id = pubkey_response.app_id.clone();
+
+    // Construct the full application identifier with the required "app_" prefix
+    let full_app_id = format!("app_{}", app_id);
+
     println!("   Received public key: {}", pubkey);
+    println!("   App ID: {}", app_id);
+    println!("   Full Application Identifier: {}", full_app_id);
 
     // ===== PHASE 4: PREPARE AND ENCRYPT ENVIRONMENT =====
     println!("4. Preparing environment variables...");
@@ -109,9 +116,17 @@ services:
     println!("   Status: {}", deployment.status);
 
     if let Some(details) = &deployment.details {
-        if let Some(app_id) = details.get("app_id") {
-            println!("   App ID: {}", app_id);
+        if let Some(app_id_value) = details.get("app_id") {
+            println!("   App ID: {}", app_id_value);
+            println!("   Full Application Identifier: app_{}", app_id_value);
+            println!("\n✨ You can check the network information using:");
+            println!("   cargo run --example network_info app_{}", app_id_value);
         }
+    } else {
+        println!("   App ID: {}", app_id);
+        println!("   Full Application Identifier: {}", full_app_id);
+        println!("\n✨ You can check the network information using:");
+        println!("   cargo run --example network_info {}", full_app_id);
     }
 
     Ok(())

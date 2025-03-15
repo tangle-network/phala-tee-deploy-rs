@@ -488,10 +488,10 @@ impl TeeClient {
             "app_env_encrypt_pubkey".to_string(),
             serde_json::Value::String(app_env_encrypt_pubkey.to_string()),
         );
-        request_body.insert(
-            "app_id_salt".to_string(),
-            serde_json::Value::String(app_id_salt.to_string()),
-        );
+        // request_body.insert(
+        //     "app_id_salt".to_string(),
+        //     serde_json::Value::String(app_id_salt.to_string()),
+        // );
 
         println!("request_body: {:#?}", request_body);
         // Create deployment

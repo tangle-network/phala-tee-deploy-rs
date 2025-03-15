@@ -71,6 +71,9 @@ services:
     println!("✅ Received public key for encryption");
     println!("   App ID: {}", app_id);
 
+    // Construct the full application identifier with the required "app_" prefix
+    let full_app_id = format!("app_{}", app_id);
+
     // Step 4: Deploy application
     println!("\n🚀 Deploying test application...");
     let env_vars = vec![]; // Empty environment variables
@@ -85,7 +88,8 @@ services:
 
     println!("✅ Application deployed successfully!");
     println!("   Deployment ID: {}", deployment.id);
-    println!("   App ID: {}", app_id); // Using app_id from pubkey_response
+    println!("   App ID: {}", app_id);
+    println!("   Full Application Identifier: {}", full_app_id);
     println!("   Status: {}", deployment.status);
 
     // Step 5: Wait for system to initialize (may take some time)
@@ -101,7 +105,7 @@ services:
         attempts += 1;
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        match deployer.get_system_stats(&app_id).await {
+        match deployer.get_system_stats(&full_app_id).await {
             Ok(stats) if stats.is_online => {
                 system_stats = Some(stats);
                 println!("✅ System is online and ready!");
@@ -128,7 +132,7 @@ services:
     // Step 6: Display system statistics
     println!(
         "\n📊 Retrieving system statistics for application ID: {}",
-        app_id
+        full_app_id
     );
 
     match system_stats {
@@ -138,14 +142,14 @@ services:
         None => {
             // Make one final attempt
             println!("   Making one final attempt to get system stats...");
-            let stats = deployer.get_system_stats(&app_id).await?;
+            let stats = deployer.get_system_stats(&full_app_id).await?;
             display_system_stats(&stats);
         }
     }
 
     println!("\n✨ Example complete!");
     println!("   You can manually check the system stats again using:");
-    println!("   cargo run --example system_stats {}", app_id);
+    println!("   cargo run --example system_stats {}", full_app_id);
 
     Ok(())
 }

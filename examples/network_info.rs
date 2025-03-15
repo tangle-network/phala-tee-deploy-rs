@@ -85,8 +85,12 @@ services:
     // Extract the app_id from the pubkey response - this is the correct identifier for the deployment
     let app_id = pubkey_response.app_id.clone();
 
+    // Construct the full application identifier with the required "app_" prefix
+    let full_app_id = format!("app_{}", app_id);
+
     println!("✅ Received public key for encryption");
     println!("   App ID: {}", app_id);
+    println!("   Full Application Identifier: {}", full_app_id);
 
     // Environment variables to deploy with
     let env_vars = vec![
@@ -113,6 +117,7 @@ services:
     println!("✅ Application deployed successfully!");
     println!("   Deployment ID: {}", deployment.id);
     println!("   App ID: {}", app_id); // Use the app_id from pubkey_response
+    println!("   Full Application Identifier: {}", full_app_id);
     println!("   Status: {}", deployment.status);
 
     // ===== STEP 5: WAIT FOR INITIALIZATION =====
@@ -129,7 +134,7 @@ services:
         attempts += 1;
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        match client.get_network_info(&app_id).await {
+        match client.get_network_info(&full_app_id).await {
             Ok(info) => {
                 if info.is_online {
                     network_info = Some(info);
@@ -154,7 +159,7 @@ services:
     }
 
     // ===== STEP 6: DISPLAY NETWORK INFO =====
-    println!("\n📡 Network Information:");
+    println!("\n📡 Network Information for {}:", full_app_id);
 
     match network_info {
         Some(info) => {

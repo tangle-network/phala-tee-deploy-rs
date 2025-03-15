@@ -57,9 +57,15 @@ services:
 
     let public_key = pubkey_response.app_env_encrypt_pubkey;
     let salt = pubkey_response.app_id_salt;
+    let app_id = pubkey_response.app_id.clone();
+
+    // Construct the full application identifier with the required "app_" prefix
+    let full_app_id = format!("app_{}", app_id);
 
     println!("Retrieved public key: {}", public_key);
     println!("Retrieved salt: {}", salt);
+    println!("App ID: {}", app_id);
+    println!("Full Application Identifier: {}", full_app_id);
 
     // STEP 3: In a real scenario, the operator would send this public key to the user
     // who would encrypt their secrets and send back the encrypted data
@@ -86,7 +92,12 @@ services:
 
     println!("\nDeployment successful!");
     println!("Deployment ID: {}", deployment.id);
+    println!("App ID: {}", app_id);
+    println!("Full Application Identifier: {}", full_app_id);
     println!("Status: {}", deployment.status);
+
+    println!("\nTo check the deployment status or retrieve network information, use:");
+    println!("cargo run --example network_info {}", full_app_id);
 
     println!("\nWorkflow complete. The deployment is now running in the TEE environment.");
 

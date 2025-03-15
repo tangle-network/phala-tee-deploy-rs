@@ -16,6 +16,15 @@ async fn main() -> Result<()> {
         .or_else(|| env::var("PHALA_APP_ID").ok())
         .expect("App ID required: provide as argument or PHALA_APP_ID env var");
 
+    // Add the "app_" prefix if it's not already present
+    let prefixed_app_id = if !app_id.starts_with("app_") {
+        format!("app_{}", app_id)
+    } else {
+        app_id.clone()
+    };
+
+    println!("Using application identifier: {}", prefixed_app_id);
+
     // Initialize client with minimal configuration
     let client = TeeClient::new(DeploymentConfig {
         api_key: env::var("PHALA_CLOUD_API_KEY").expect("API key required"),
@@ -30,7 +39,7 @@ async fn main() -> Result<()> {
 
     // ===== PHASE 1: RETRIEVE CURRENT CONFIGURATION =====
     println!("1. Retrieving current deployment configuration...");
-    let compose = client.get_compose(&app_id).await?;
+    let compose = client.get_compose(&prefixed_app_id).await?;
 
     // ===== PHASE 2: MODIFY CONFIGURATION =====
     println!("2. Modifying deployment configuration...");
@@ -55,12 +64,17 @@ async fn main() -> Result<()> {
     // ===== PHASE 3: APPLY UPDATES =====
     println!("4. Applying updates to deployment...");
     let update_response = client
-        .update_compose(&app_id, compose_file, Some(env_vars), compose.env_pubkey)
+        .update_compose(
+            &prefixed_app_id,
+            compose_file,
+            Some(env_vars),
+            compose.env_pubkey,
+        )
         .await?;
 
     // ===== RESULT =====
     println!("\n✅ Deployment updated successfully!");
-    println!("   New configuration applied to app ID: {}", app_id);
+    println!("   New configuration applied to: {}", prefixed_app_id);
 
     // Access the strongly typed response if available, otherwise show raw JSON
     if let Some(status) = update_response.get("status") {
