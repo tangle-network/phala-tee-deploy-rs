@@ -225,3 +225,30 @@ client.update_compose(
     compose.env_pubkey
 ).await?;
 ```
+
+#### Pattern 5: Getting Network Information
+
+Retrieve connectivity information and public URLs for accessing a deployed application:
+
+```rust
+// Retrieve network information using TeeClient
+let network_info = client.get_network_info(&app_id).await?;
+
+// Check if the app is online
+if network_info.is_online {
+    println!("Application is online!");
+
+    // Get the public URLs
+    println!("Application URL: {}", network_info.public_urls.app);
+    println!("Instance URL: {}", network_info.public_urls.instance);
+} else {
+    println!("Application is offline.");
+    if let Some(error) = network_info.error {
+        println!("Error: {}", error);
+    }
+}
+
+// Or using the higher-level TeeDeployer API
+let network_info = deployer.get_network_info(&app_id).await?;
+println!("You can access your application at: {}", network_info.public_urls.app);
+```

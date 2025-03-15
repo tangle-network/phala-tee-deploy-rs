@@ -7,7 +7,9 @@ use crate::{
     config::DeploymentConfig,
     crypto::Encryptor,
     error::Error,
-    types::{ComposeResponse, DeploymentResponse, VmConfig},
+    types::{
+        ComposeResponse, DeploymentResponse, NetworkInfoResponse, SystemStatsResponse, VmConfig,
+    },
     PubkeyResponse, TeePodDiscoveryResponse,
 };
 
@@ -514,6 +516,88 @@ impl TeeClient {
 
         response
             .json::<DeploymentResponse>()
+            .await
+            .map_err(Error::HttpClient)
+    }
+
+    /// Retrieves network information for a deployed application.
+    ///
+    /// This method fetches network connectivity details, status, and public URLs
+    /// for accessing the deployed application.
+    ///
+    /// # Parameters
+    ///
+    /// * `app_id` - The ID of the application to get network information for
+    ///
+    /// # Returns
+    ///
+    /// A `NetworkInfoResponse` containing network details including status and URLs
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The API request fails
+    /// * The application is not found
+    /// * The network information cannot be retrieved
+    pub async fn get_network_info(&self, app_id: &str) -> Result<NetworkInfoResponse, Error> {
+        let response = self
+            .client
+            .get(format!("{}/cvms/{}/network", self.config.api_url, app_id))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api {
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
+            });
+        }
+
+        response
+            .json::<NetworkInfoResponse>()
+            .await
+            .map_err(Error::HttpClient)
+    }
+
+    /// Retrieves system statistics for a deployed application.
+    ///
+    /// This method fetches detailed system information including OS details,
+    /// CPU, memory, disk usage, and load averages for a deployed containerized application.
+    ///
+    /// # Parameters
+    ///
+    /// * `app_id` - The ID of the application to get system statistics for
+    ///
+    /// # Returns
+    ///
+    /// A `SystemStatsResponse` containing system information if successful
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The API request fails
+    /// * The application is not found
+    /// * The system statistics cannot be retrieved
+    pub async fn get_system_stats(&self, app_id: &str) -> Result<SystemStatsResponse, Error> {
+        let response = self
+            .client
+            .get(format!("{}/cvms/{}/stats", self.config.api_url, app_id))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api {
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
+            });
+        }
+
+        response
+            .json::<SystemStatsResponse>()
             .await
             .map_err(Error::HttpClient)
     }

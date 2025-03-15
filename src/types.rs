@@ -317,3 +317,135 @@ pub struct TeePodImage {
     /// Image version numbers [major, minor, patch]
     pub version: Vec<u64>,
 }
+
+/// Response containing network information for a deployment.
+///
+/// Provides details about connectivity, IP addresses, and public URLs
+/// for accessing the deployed application.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkInfoResponse {
+    /// Whether the deployment is online and responding
+    pub is_online: bool,
+
+    /// Whether the deployment is publicly accessible
+    pub is_public: bool,
+
+    /// Error message if there's a connectivity issue (null if no error)
+    pub error: Option<String>,
+
+    /// Internal IP address of the deployment
+    pub internal_ip: String,
+
+    /// Timestamp of the latest connectivity handshake
+    pub latest_handshake: String,
+
+    /// Public URLs for accessing the deployment
+    pub public_urls: PublicUrls,
+}
+
+/// Public URLs for accessing a deployment.
+///
+/// Contains URLs for different parts of the deployment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicUrls {
+    /// URL for the main application
+    pub app: String,
+
+    /// URL for the instance/container
+    pub instance: String,
+}
+
+/// System information for a disk in a virtual machine.
+///
+/// Contains details about a disk's name, mount point, and size information.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskInfo {
+    /// Name of the disk (e.g., "sda1")
+    pub name: String,
+
+    /// Mount point of the disk (e.g., "/", "/home")
+    pub mount_point: Option<String>,
+
+    /// Total size of the disk in bytes
+    pub total_size: u64,
+
+    /// Free space available on the disk in bytes
+    pub free_size: u64,
+}
+
+/// Detailed system information for a virtual machine.
+///
+/// Contains comprehensive details about the operating system, hardware,
+/// and resource utilization of a deployed container VM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemInfo {
+    /// Operating system name (e.g., "Linux")
+    pub os_name: String,
+
+    /// Operating system version
+    pub os_version: String,
+
+    /// Linux kernel version
+    pub kernel_version: String,
+
+    /// CPU model name
+    pub cpu_model: String,
+
+    /// Number of CPU cores
+    pub num_cpus: u32,
+
+    /// Total physical memory in bytes
+    pub total_memory: u64,
+
+    /// Available memory in bytes
+    pub available_memory: u64,
+
+    /// Used memory in bytes
+    pub used_memory: u64,
+
+    /// Free memory in bytes
+    pub free_memory: u64,
+
+    /// Total swap space in bytes
+    pub total_swap: u64,
+
+    /// Used swap space in bytes
+    pub used_swap: u64,
+
+    /// Free swap space in bytes
+    pub free_swap: u64,
+
+    /// System uptime in seconds
+    pub uptime: u64,
+
+    /// 1-minute load average
+    pub loadavg_one: f32,
+
+    /// 5-minute load average
+    pub loadavg_five: f32,
+
+    /// 15-minute load average
+    pub loadavg_fifteen: f32,
+
+    /// Information about mounted disks
+    pub disks: Vec<DiskInfo>,
+}
+
+/// Response containing system statistics for a container VM.
+///
+/// Provides details about the operational status and system resource usage
+/// of a deployed application in the Phala TEE Cloud.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemStatsResponse {
+    /// Whether the VM is online and responding
+    pub is_online: bool,
+
+    /// Whether the VM is publicly accessible
+    pub is_public: bool,
+
+    /// Error message if there's an issue (null if no error)
+    pub error: Option<String>,
+
+    /// Detailed system information
+    pub sysinfo: SystemInfo,
+}

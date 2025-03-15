@@ -1,6 +1,7 @@
 use crate::{
     AdvancedFeatures, ComposeManifest, DeploymentConfig, DeploymentResponse, DockerConfig, Error,
-    PubkeyResponse, Result, TeeClient, TeePodDiscoveryResponse, VmConfig,
+    NetworkInfoResponse, PubkeyResponse, Result, SystemStatsResponse, TeeClient,
+    TeePodDiscoveryResponse, VmConfig,
 };
 use dockworker::config::compose::{ComposeConfig, Service};
 use dockworker::config::EnvironmentVars;
@@ -757,6 +758,52 @@ impl TeeDeployer {
             .await?;
 
         Ok(response)
+    }
+
+    /// Retrieves network information for a deployed application.
+    ///
+    /// This method fetches network connectivity details, status, and public URLs
+    /// for accessing a deployed application.
+    ///
+    /// # Parameters
+    ///
+    /// * `app_id` - The ID of the application to get network information for
+    ///
+    /// # Returns
+    ///
+    /// A `NetworkInfoResponse` containing network details including status and URLs
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The API request fails
+    /// * The application is not found
+    /// * The network information cannot be retrieved
+    pub async fn get_network_info(&self, app_id: &str) -> Result<NetworkInfoResponse> {
+        self.client.get_network_info(app_id).await
+    }
+
+    /// Retrieves system statistics for a deployed application.
+    ///
+    /// This method fetches detailed system information including OS details,
+    /// CPU, memory, disk usage, and load averages for a deployed application.
+    ///
+    /// # Parameters
+    ///
+    /// * `app_id` - The ID of the application to get system statistics for
+    ///
+    /// # Returns
+    ///
+    /// A `SystemStatsResponse` containing system information including resource usage
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The API request fails
+    /// * The application is not found
+    /// * The system statistics cannot be retrieved
+    pub async fn get_system_stats(&self, app_id: &str) -> Result<SystemStatsResponse> {
+        self.client.get_system_stats(app_id).await
     }
 
     /// Returns a reference to the underlying `TeeClient` for direct access to lower-level operations.
