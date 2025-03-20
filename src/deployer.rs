@@ -687,6 +687,71 @@ impl TeeDeployer {
         Ok(response)
     }
 
+    /// Provisions a new ELIZA chatbot deployment.
+    ///
+    /// This method initiates the ELIZA deployment process by requesting an app_id
+    /// and encryption key from the API. This is the first step in the two-step
+    /// deployment process.
+    ///
+    /// # Parameters
+    ///
+    /// * `name` - Name for the ELIZA deployment
+    /// * `character_file` - Character configuration file content
+    /// * `env_keys` - List of environment variable keys to include
+    /// * `image` - Docker image to use for the deployment
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// * `app_id` - The ID of the provisioned application
+    /// * `app_env_encrypt_pubkey` - The public key for encrypting environment variables
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The API request fails
+    /// * Invalid configuration is provided
+    /// * The response cannot be parsed
+    pub async fn provision_eliza(
+        &self,
+        name: String,
+        character_file: String,
+        env_keys: Vec<String>,
+        image: String,
+    ) -> Result<(String, String)> {
+        self.client
+            .provision_eliza(name, character_file, env_keys, image)
+            .await
+    }
+
+    /// Creates a VM for an ELIZA deployment with encrypted environment variables.
+    ///
+    /// This method is the second step in the ELIZA deployment process, creating
+    /// the actual VM with the provided encrypted environment variables.
+    ///
+    /// # Parameters
+    ///
+    /// * `app_id` - The ID of the provisioned application
+    /// * `encrypted_env` - Pre-encrypted environment variables
+    ///
+    /// # Returns
+    ///
+    /// A `DeploymentResponse` containing the deployment details and status
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The API request fails
+    /// * The deployment cannot be created
+    /// * The response cannot be parsed
+    pub async fn create_eliza_vm(
+        &self,
+        app_id: &str,
+        encrypted_env: &str,
+    ) -> Result<DeploymentResponse> {
+        self.client.create_eliza_vm(app_id, encrypted_env).await
+    }
+
     /// Retrieves network information for a deployed application.
     ///
     /// This method fetches network connectivity details, status, and public URLs

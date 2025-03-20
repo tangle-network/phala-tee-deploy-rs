@@ -8,16 +8,15 @@ Phala TEE Cloud runs applications in hardware-enforced isolated enclaves, provid
 
 - **Environment Variable Encryption** - Secure handling of sensitive data
 - **Docker Compose Support** - Deploy multi-container applications
+- **ELIZA Deployment** - Simplified deployment of ELIZA chatbots
 - **Flexible Deployment Patterns** - From simple one-step to advanced privilege separation
-- **Dockworker Integration** - Create and manage Docker Compose configurations programmatically
 
 ## Getting Started
 
 ### Prerequisites
 
 - Phala Cloud account with API access
-- A TEE pod ID from your Phala account
-- Docker Compose configuration for your application
+- An API key from your Phala account
 
 ### Environment Setup
 
@@ -25,20 +24,16 @@ Create a `.env` file with:
 
 ```
 PHALA_CLOUD_API_KEY=your-api-key
-PHALA_CLOUD_API_ENDPOINT=https://cloud-api.phala.network/api/v1
-PHALA_TEEPOD_ID=your-teepod-id
-PHALA_APP_ID=your-app-id  # For updating existing deployments
 ```
 
 ## Deployment APIs
 
 ### High-Level API with TeeDeployer (Recommended)
 
-The `TeeDeployer` provides a streamlined interface for deploying Docker Compose applications to Phala TEE Cloud. It integrates with the [dockworker](https://github.com/tangle-network/dockworker) library to simplify Docker Compose configuration management.
+The `TeeDeployer` provides a streamlined interface for deploying applications to Phala TEE Cloud.
 
 ```rust
-use dockworker::config::compose::{ComposeConfig, Service};
-use phala_tee_deploy_rs::{TeeDeployer, TeeDeployerBuilder};
+use phala_tee_deploy_rs::{TeeDeployerBuilder};
 use std::collections::HashMap;
 
 // Create deployer with builder pattern
@@ -48,8 +43,14 @@ let mut deployer = TeeDeployerBuilder::new()
 
 // Discover available TEEPod
 deployer.discover_teepod().await?;
+```
 
-// Option 1: Deploy from YAML string
+### Deployment Options
+
+#### 1. Deploy from Docker Compose YAML
+
+```rust
+// Deploy from YAML string
 let yaml = r#"
 version: '3'
 services:
@@ -58,6 +59,9 @@ services:
     ports:
       - "80:80"
 "#;
+
+let mut env_vars = HashMap::new();
+env_vars.insert("PORT".to_string(), "80".to_string());
 
 let result = deployer.deploy_compose_from_string(
     yaml,
@@ -68,187 +72,108 @@ let result = deployer.deploy_compose_from_string(
     Some(10),   // Disk size (GB)
 ).await?;
 
-// Access the strongly typed response
+// Access the response
 println!("Deployment ID: {}", result.id);
-println!("Deployment Status: {}", result.status);
-if let Some(details) = &result.details {
-    println!("TEEPod ID: {}", details.get("teepod_id").unwrap_or(&Value::Null));
+println!("Status: {}", result.status);
+```
+
+#### 2. Deploy a Simple Service
+
+```rust
+// Deploy a simple service with just an image
+let mut env_vars = HashMap::new();
+env_vars.insert("PORT".to_string(), "3000".to_string());
+
+let result = deployer.deploy_simple_service(
+    "nginx:latest",                  // Docker image
+    "web",                           // Service name
+    "my-webapp",                     // App name
+    env_vars,                        // Environment variables
+    Some(vec!["80:80".to_string()]), // Port mappings
+    None,                            // Volumes
+    None,                            // Command
+    None,                            // vCPUs (default)
+    None,                            // Memory (default)
+    None,                            // Disk size (default)
+).await?;
+```
+
+#### 3. Deploy ELIZA (Two-Step Process)
+
+```rust
+// Step 1: Provision ELIZA to get app_id and encryption key
+let deployment_name = format!("eliza-demo-{}", uuid::Uuid::new_v4());
+let (app_id, app_env_encrypt_pubkey) = deployer
+    .provision_eliza(
+        deployment_name.clone(),
+        character_file,               // ELIZA character configuration
+        vec!["OPENAI_API_KEY".to_string()], // Environment variables to include
+        "phalanetwork/eliza:v0.1.8-alpha.1".to_string(),
+    )
+    .await?;
+
+// Step 2: Encrypt environment variables
+let mut env_vars = Vec::new();
+env_vars.push(("CHARACTER_DATA".to_string(), character_file));
+if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+    env_vars.push(("OPENAI_API_KEY".to_string(), key));
 }
+let encrypted_env = Encryptor::encrypt_env_vars(&env_vars, &app_env_encrypt_pubkey)?;
 
-// Option 2: Deploy from dockworker ComposeConfig
-let mut compose_config = ComposeConfig::default();
-// ... configure services programmatically ...
-
-let result = deployer.deploy_compose(
-    &compose_config,
-    "my-app",
-    env_vars,
-    None, // Use default vCPUs
-    None, // Use default memory
-    None, // Use default disk size
-).await?;
-
-// Access the strongly typed response
-println!("Deployment ID: {}", result.id);
-println!("Deployment Status: {}", result.status);
+// Step 3: Create VM with encrypted environment variables
+let result = deployer.create_eliza_vm(&app_id, &encrypted_env).await?;
 ```
 
-### Low-Level API with TeeClient
+### Getting Deployment Information
 
-The following patterns use the `TeeClient` directly for more control over the deployment process.
-
-#### Pattern 1: Simple Deployment
-
-Deploy with a single function call. Best for straightforward applications where simplicity is key:
+#### Network Information
 
 ```rust
-let config = DeploymentConfig::new(
-    std::env::var("PHALA_CLOUD_API_KEY")?,
-    docker_compose_content,
-    environment_variables,
-    std::env::var("PHALA_TEEPOD_ID")?.parse()?,
-    "phala-worker:latest".to_string(),
-);
+// Get network info for a deployed application
+let network_info = deployer.get_network_info(&app_id).await?;
 
-let client = TeeClient::new(config)?;
-let deployment = client.deploy().await?;
-println!("Deployed: {}", deployment.id);
-```
-
-#### Pattern 2: Step-by-Step Deployment
-
-For when you need full control over the deployment process:
-
-```rust
-// 1. Initialize client
-let client = TeeClient::new(minimal_config)?;
-
-// 2. Get available TEEPods
-let teepods = client.get_available_teepods().await?;
-let teepod_id = teepods.nodes[0].teepod_id;
-let image = &teepods.nodes[0].images[0].name;
-
-// 3. Prepare VM configuration (using JSON for flexibility)
-let vm_config = json!({
-    "name": "my-app",
-    "compose_manifest": {
-        "docker_compose_file": docker_compose,
-        "name": "my-app",
-        "features": ["kms", "tproxy-net"]
-    },
-    "vcpu": 2,
-    "memory": 8192,
-    "disk_size": 40,
-    "teepod_id": teepod_id,
-    "image": image,
-    "advanced_features": {
-        "tproxy": true,
-        "kms": true,
-        "public_sys_info": true,
-        "public_logs": true,
-        "docker_config": {
-            "username": "",
-            "password": "",
-            "registry": null
-        },
-        "listed": false
-    }
-});
-
-// 4. Get encryption keys
-let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
-
-// 5. Deploy with environment variables
-let deployment = client.deploy_with_config_do_encrypt(
-    vm_config,
-    &env_vars,
-    &pubkey_response.app_env_encrypt_pubkey,
-    &pubkey_response.app_id_salt
-).await?;
-
-// Access the strongly typed response
-println!("Deployment ID: {}", deployment.id);
-println!("Deployment Status: {}", deployment.status);
-```
-
-#### Pattern 3: Privilege Separation
-
-Security-focused approach where operators handle infrastructure while users manage secrets:
-
-```rust
-// OPERATOR: Has API access, doesn't see secrets
-// 1. Get available TEEPods
-let teepods = client.get_available_teepods().await?;
-
-// 2. Prepare VM configuration
-let vm_config = json!({ /* configuration */ });
-
-// 3. Get encryption key
-let pubkey = client.get_pubkey_for_config(&vm_config).await?;
-
-// 4. Send pubkey to user through secure channel
-send_to_user(pubkey);
-
-// 5. Receive encrypted variables from user
-let encrypted_env = receive_from_user();
-
-// 6. Deploy with encrypted environment
-client.deploy_with_config_encrypted_env(
-    vm_config, encrypted_env, pubkey
-).await?;
-
-// USER: Has secrets, doesn't need API access
-// 1. Receives pubkey from operator
-// 2. Encrypts environment variables
-let encrypted = Encryptor::encrypt_env_vars(&secrets, pubkey)?;
-// 3. Sends encrypted data to operator
-send_to_operator(encrypted);
-```
-
-#### Pattern 4: Updating Deployments
-
-Update existing deployments with new configurations or environment variables:
-
-```rust
-// 1. Get current configuration
-let compose = client.get_compose(&app_id).await?;
-
-// 2. Modify configuration and environment variables
-let mut compose_file = compose.compose_file;
-// Update compose file fields as needed...
-
-// 3. Apply update
-client.update_compose(
-    &app_id,
-    compose_file,
-    Some(new_env_vars),
-    compose.env_pubkey
-).await?;
-```
-
-#### Pattern 5: Getting Network Information
-
-Retrieve connectivity information and public URLs for accessing a deployed application:
-
-```rust
-// Retrieve network information using TeeClient
-let network_info = client.get_network_info(&app_id).await?;
-
-// Check if the app is online
 if network_info.is_online {
-    println!("Application is online!");
-
-    // Get the public URLs
     println!("Application URL: {}", network_info.public_urls.app);
     println!("Instance URL: {}", network_info.public_urls.instance);
-} else {
-    println!("Application is offline.");
-    if let Some(error) = network_info.error {
-        println!("Error: {}", error);
-    }
 }
-
-// Or using the higher-level TeeDeployer API
-let network_info = deployer.get_network_info(&app_id).await?;
-println!("You can access your application at: {}", network_info.public_urls.app);
 ```
+
+#### System Statistics
+
+```rust
+// Get system statistics for a deployed application
+let stats = deployer.get_system_stats(&app_id).await?;
+
+println!("OS: {} {}", stats.sysinfo.os_name, stats.sysinfo.os_version);
+println!("Memory: {:.2} GB used / {:.2} GB total",
+    stats.sysinfo.used_memory as f64 / 1024.0 / 1024.0 / 1024.0,
+    stats.sysinfo.total_memory as f64 / 1024.0 / 1024.0 / 1024.0
+);
+```
+
+### Updating Deployments
+
+```rust
+// Update an existing deployment
+let app_id = format!("app_{}", deployment_id);
+let mut new_env_vars = HashMap::new();
+new_env_vars.insert("DEBUG".to_string(), "true".to_string());
+
+let update_result = deployer.update_deployment(
+    &app_id,
+    Some(new_docker_compose),  // New Docker Compose configuration (optional)
+    Some(new_env_vars)         // New environment variables (optional)
+).await?;
+```
+
+## Advanced Deployment Patterns
+
+For more advanced use cases such as privilege separation (where operators handle infrastructure while users manage secrets), see the examples directory or refer to the API documentation.
+
+## Examples
+
+Check out the `examples` directory for complete working examples:
+
+- `simple_deployment.rs` - Basic deployment example
+- `eliza_deployment.rs` - ELIZA chatbot deployment example
+- `advanced_deployment.rs` - Step-by-step deployment with privilege separation

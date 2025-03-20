@@ -516,6 +516,181 @@ impl TeeClient {
             .map_err(Error::HttpClient)
     }
 
+    /// Provisions a new ELIZA chatbot deployment.
+    ///
+    /// This method initiates the ELIZA deployment process by requesting an app_id
+    /// and encryption key from the API. This is the first step in the two-step
+    /// deployment process.
+    ///
+    /// # Parameters
+    ///
+    /// * `name` - Name for the ELIZA deployment
+    /// * `character_file` - Character configuration file content
+    /// * `env_keys` - List of environment variable keys to include
+    /// * `image` - Docker image to use for the deployment
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// * `app_id` - The ID of the provisioned application
+    /// * `app_env_encrypt_pubkey` - The public key for encrypting environment variables
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The API request fails
+    /// * Invalid configuration is provided
+    /// * The response cannot be parsed
+    pub async fn provision_eliza(
+        &self,
+        name: String,
+        character_file: String,
+        env_keys: Vec<String>,
+        image: String,
+    ) -> Result<(String, String), Error> {
+        let request_body = serde_json::json!({
+            "name": name,
+            "characterfile": character_file,
+            "env_keys": env_keys,
+            "teepod_id": self.config.teepod_id,
+            "image": image
+        });
+
+        let response = self
+            .client
+            .post(format!("{}/cvms/provision/eliza", self.config.api_url))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .json(&request_body)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api {
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
+            });
+        }
+
+        // Get the response as JSON Value to extract necessary fields
+        let provision_response = response.json::<serde_json::Value>().await?;
+
+        // Extract required values
+        let app_id = match provision_response.get("app_id") {
+            Some(id) => id.as_str().ok_or_else(|| {
+                Error::Configuration("Missing app_id in provision response".to_string())
+            })?,
+            None => {
+                return Err(Error::Configuration(
+                    "Missing app_id in provision response".to_string(),
+                ))
+            }
+        };
+
+        let app_env_encrypt_pubkey = match provision_response.get("app_env_encrypt_pubkey") {
+            Some(key) => key.as_str().ok_or_else(|| {
+                Error::Configuration("Missing encryption key in provision response".to_string())
+            })?,
+            None => {
+                return Err(Error::Configuration(
+                    "Missing encryption key in provision response".to_string(),
+                ))
+            }
+        };
+
+        Ok((app_id.to_string(), app_env_encrypt_pubkey.to_string()))
+    }
+
+    /// Creates a VM for an ELIZA deployment with encrypted environment variables.
+    ///
+    /// This method is the second step in the ELIZA deployment process, creating
+    /// the actual VM with the provided encrypted environment variables.
+    ///
+    /// # Parameters
+    ///
+    /// * `app_id` - The ID of the provisioned application
+    /// * `encrypted_env` - Pre-encrypted environment variables
+    ///
+    /// # Returns
+    ///
+    /// A `DeploymentResponse` containing the deployment details and status
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * The API request fails
+    /// * The deployment cannot be created
+    /// * The response cannot be parsed
+    pub async fn create_eliza_vm(
+        &self,
+        app_id: &str,
+        encrypted_env: &str,
+    ) -> Result<DeploymentResponse, Error> {
+        // Create the VM
+        let create_body = serde_json::json!({
+            "app_id": app_id,
+            "encrypted_env": encrypted_env
+        });
+
+        let create_response = self
+            .client
+            .post(format!("{}/cvms", self.config.api_url))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .json(&create_body)
+            .send()
+            .await?;
+
+        if !create_response.status().is_success() {
+            return Err(Error::Api {
+                status_code: create_response.status().as_u16(),
+                message: create_response.text().await?,
+            });
+        }
+
+        // Parse final response into DeploymentResponse
+        let response_text = create_response.text().await?;
+
+        match serde_json::from_str::<DeploymentResponse>(&response_text) {
+            Ok(deployment_response) => Ok(deployment_response),
+            Err(e) => {
+                // Try to extract ID from app_id
+                let mut response_json: serde_json::Value = serde_json::from_str(&response_text)
+                    .map_err(|_| {
+                        Error::Configuration(format!("Failed to parse response: {}", e))
+                    })?;
+
+                // If response already has app_id, use it to build DeploymentResponse
+                if response_json.get("app_id").is_some() {
+                    // Remove app_ prefix if necessary
+                    let id_str = app_id.trim_start_matches("app_");
+
+                    // Try to parse as number
+                    let id = id_str.parse::<u64>().unwrap_or(0);
+
+                    // Create a details map with all available information
+                    let mut details = HashMap::new();
+                    if let Some(obj) = response_json.as_object_mut() {
+                        for (k, v) in obj {
+                            details.insert(k.clone(), v.clone());
+                        }
+                    }
+
+                    Ok(DeploymentResponse {
+                        id,
+                        status: "pending".to_string(),
+                        details: Some(details),
+                    })
+                } else {
+                    Err(Error::Configuration(format!(
+                        "Failed to parse deployment response: {}",
+                        e
+                    )))
+                }
+            }
+        }
+    }
+
     /// Retrieves network information for a deployed application.
     ///
     /// This method fetches network connectivity details, status, and public URLs
