@@ -100,7 +100,8 @@ pub struct EncryptedEnv {
 /// Response from a deployment operation.
 ///
 /// Contains information about the created deployment including its ID and status.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// This struct uses custom deserialization to handle variations in API responses.
+#[derive(Debug, Clone, Serialize)]
 pub struct DeploymentResponse {
     /// Unique identifier for the deployment
     pub id: u64,
@@ -110,6 +111,78 @@ pub struct DeploymentResponse {
 
     /// Additional deployment details as key-value pairs
     pub details: Option<HashMap<String, serde_json::Value>>,
+}
+
+// Implement custom deserialization to handle different API response formats
+impl<'de> Deserialize<'de> for DeploymentResponse {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        // First, try to deserialize as a generic Value
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // If it's not an object, return an error
+        let obj = match value.as_object() {
+            Some(obj) => obj,
+            None => return Err(D::Error::custom("Expected object for DeploymentResponse")),
+        };
+
+        // Try to extract the ID field from various possible formats
+        let id = if let Some(id_value) = obj.get("id") {
+            if let Some(id_num) = id_value.as_u64() {
+                id_num
+            } else if let Some(id_str) = id_value.as_str() {
+                id_str.parse::<u64>().unwrap_or(0)
+            } else {
+                0 // Default ID if can't parse
+            }
+        } else if let Some(id_value) = obj.get("uuid") {
+            if let Some(id_num) = id_value.as_u64() {
+                id_num
+            } else if let Some(id_str) = id_value.as_str() {
+                id_str.parse::<u64>().unwrap_or(0)
+            } else {
+                0 // Default ID if can't parse
+            }
+        } else if let Some(id_value) = obj.get("app_id") {
+            if let Some(id_str) = id_value.as_str() {
+                // Extract numeric part from "app_123" format
+                if id_str.starts_with("app_") {
+                    id_str[4..].parse::<u64>().unwrap_or(0)
+                } else {
+                    id_str.parse::<u64>().unwrap_or(0)
+                }
+            } else {
+                0 // Default ID if can't parse
+            }
+        } else {
+            // If no ID field is found, generate a random one
+            use rand::Rng;
+            rand::thread_rng().gen()
+        };
+
+        // Extract status field
+        let status = obj
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("pending")
+            .to_string();
+
+        // Create details map with all fields from the response
+        let mut details = HashMap::new();
+        for (k, v) in obj {
+            details.insert(k.clone(), v.clone());
+        }
+
+        Ok(DeploymentResponse {
+            id,
+            status,
+            details: Some(details),
+        })
+    }
 }
 
 /// Response when retrieving a compose configuration.

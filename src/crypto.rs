@@ -4,8 +4,8 @@ use aes_gcm::{
     Aes256Gcm, Key, Nonce,
 };
 use rand::{rngs::OsRng, RngCore};
-use x25519_dalek::{EphemeralSecret, PublicKey};
 use serde::{Deserialize, Serialize};
+use x25519_dalek::{EphemeralSecret, PublicKey};
 
 /// Cryptographic utilities for secure data transmission.
 ///
@@ -62,7 +62,7 @@ impl Encryptor {
     /// Specialized version that uses a fixed ephemeral public key and IV for compatibility testing
     /// or for deterministic results in certain contexts (like tests or migrations).
     ///
-    /// IMPORTANT: This should NOT be used in production as it eliminates the security 
+    /// IMPORTANT: This should NOT be used in production as it eliminates the security
     /// benefits of using fresh random values.
     ///
     /// # Parameters
@@ -247,43 +247,42 @@ mod tests {
         // These variables are not directly used in the test but kept for documentation
         // and to show what would be used in a real scenario
         let _remote_pubkey = "3fffa0dbcda49049ad2418f45972c164f076d32ea5ed1e3632dea5d366e39926";
-        
-        let _env_vars = vec![
-            ("FOO".to_string(), "BAR".to_string()),
-        ];
+
+        let _env_vars = vec![("FOO".to_string(), "BAR".to_string())];
 
         // These values have been extracted from the expected output
         let expected_output = "db3295ac44a01fec9d154f760e02fa8f7e64475c54ea3f08a6f19f269ac6df24828b72b8884d12ce128840e489c6ef3c491785b732da9423312be14e63bf114f232f869f1f4a4a21721c7b7c4af26373b7e06d4cb49e3a30cb497a37006a0ee171";
-        
+
         // Extract the components
         let ephemeral_pubkey = hex::decode(&expected_output[0..64]).unwrap();
         let iv = hex::decode(&expected_output[64..88]).unwrap();
         let ciphertext = hex::decode(&expected_output[88..]).unwrap();
-        
+
         // Convert to fixed-size arrays for the public key and IV
         let mut ephemeral_pubkey_bytes = [0u8; 32];
         let mut iv_bytes = [0u8; 12];
         ephemeral_pubkey_bytes.copy_from_slice(&ephemeral_pubkey);
         iv_bytes.copy_from_slice(&iv);
-        
+
         // For test purposes, we'll just recreate the expected output by concatenating the pieces
         let mut result = Vec::with_capacity(ephemeral_pubkey.len() + iv.len() + ciphertext.len());
         result.extend_from_slice(&ephemeral_pubkey);
         result.extend_from_slice(&iv);
         result.extend_from_slice(&ciphertext);
-        
+
         let hex_result = hex::encode(&result);
-        
+
         // Verify that our reconstruction matches the expected output
         assert_eq!(hex_result, expected_output);
-        
+
         // Also test the output from our helper method
         let compatible_output = Encryptor::create_compatible_output(
             &expected_output[0..64],
             &expected_output[64..88],
-            &expected_output[88..]
-        ).unwrap();
-        
+            &expected_output[88..],
+        )
+        .unwrap();
+
         assert_eq!(compatible_output, expected_output);
     }
 }

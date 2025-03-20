@@ -1,254 +1,176 @@
-# Phala TEE Deployment Toolkit
+# Phala TEE Deploy - Rust Library
 
-A Rust library for deploying Docker Compose applications to the Phala TEE (Trusted Execution Environment) Cloud with secure environment variable handling.
+A robust Rust library for deploying and managing secure applications in Phala's Trusted Execution Environment (TEE) infrastructure.
 
-## Overview
+## Features
 
-Phala TEE Cloud runs applications in hardware-enforced isolated enclaves, providing enhanced security guarantees. This toolkit simplifies deployments to the Phala Cloud with:
+- **Secure Deployment**: Deploy containerized applications to secure, isolated TEE environments
+- **ELIZA Chatbot Support**: Specialized support for deploying ELIZA-based chatbot services
+- **Docker Compose Integration**: Deploy complex multi-container applications using Docker Compose
+- **Environment Variable Encryption**: Secure transmission of sensitive environment variables
+- **Robust API Handling**: Resilient handling of API response variations and inconsistencies
+- **Comprehensive Error Management**: Detailed error information with recovery mechanisms
+- **Network Configuration**: Automatic network setup and public URL exposure
+- **System Monitoring**: Access to detailed system statistics and performance metrics
 
-- **Environment Variable Encryption** - Secure handling of sensitive data
-- **Docker Compose Support** - Deploy multi-container applications
-- **Flexible Deployment Patterns** - From simple one-step to advanced privilege separation
-- **Dockworker Integration** - Create and manage Docker Compose configurations programmatically
+## Installation
 
-## Getting Started
+Add this to your `Cargo.toml`:
 
-### Prerequisites
-
-- Phala Cloud account with API access
-- A TEE pod ID from your Phala account
-- Docker Compose configuration for your application
-
-### Environment Setup
-
-Create a `.env` file with:
-
-```
-PHALA_CLOUD_API_KEY=your-api-key
-PHALA_CLOUD_API_ENDPOINT=https://cloud-api.phala.network/api/v1
-PHALA_TEEPOD_ID=your-teepod-id
-PHALA_APP_ID=your-app-id  # For updating existing deployments
+```toml
+[dependencies]
+phala-tee-deploy-rs = { git = "https://github.com/yourusername/phala-tee-deploy-rs.git" }
 ```
 
-## Deployment APIs
-
-### High-Level API with TeeDeployer (Recommended)
-
-The `TeeDeployer` provides a streamlined interface for deploying Docker Compose applications to Phala TEE Cloud. It integrates with the [dockworker](https://github.com/tangle-network/dockworker) library to simplify Docker Compose configuration management.
+## Quick Start
 
 ```rust
-use dockworker::config::compose::{ComposeConfig, Service};
-use phala_tee_deploy_rs::{TeeDeployer, TeeDeployerBuilder};
+use phala_tee_deploy_rs::{Error, TeeDeployerBuilder};
+
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    // Load environment variables from .env file if present
+    dotenv::dotenv().ok();
+
+    // Get API key from environment
+    let api_key = std::env::var("PHALA_CLOUD_API_KEY")
+        .expect("PHALA_CLOUD_API_KEY environment variable is required");
+
+    // Create the TEE deployer
+    let mut deployer = TeeDeployerBuilder::new()
+        .with_api_key(api_key)
+        .build()?;
+
+    // Discover available TEEPods
+    let teepods = deployer.discover_teepod().await?;
+    println!("Found {} TEEPods available", teepods.nodes.len());
+
+    // Deploy a simple service
+    let result = deployer
+        .provision_eliza(
+            "my-eliza-assistant".to_string(),
+            get_character_file(),
+            vec!["OPENAI_API_KEY".to_string()],
+            "phalanetwork/eliza:latest".to_string(),
+        )
+        .await?;
+
+    println!("Deployment successful!");
+    println!("Deployment ID: {}", result.id);
+    println!("Status: {}", result.status);
+
+    Ok(())
+}
+
+fn get_character_file() -> String {
+    // Your character configuration JSON here
+    r#"{"name": "ExampleAgent", "bio": ["Helpful AI assistant"]}"#.to_string()
+}
+```
+
+## API Response Handling
+
+This library employs a robust approach to handling API responses:
+
+- **Custom Deserialization**: The `DeploymentResponse` struct uses custom deserialization to handle variations in API responses
+- **Field Name Flexibility**: Handles multiple field names for the same data (e.g., `id`, `uuid`, or `app_id`)
+- **Fallback Mechanisms**: When specific fields are missing, the library will attempt to find alternatives
+- **Comprehensive Details**: All response fields are preserved in the `details` field for reference
+
+## Examples
+
+The library includes several examples to demonstrate its functionality:
+
+- **Basic ELIZA Deployment**: Simple deployment of an ELIZA chatbot assistant
+- **Robust ELIZA Deployment**: Enhanced version with error handling and fallback mechanisms
+- **Docker Compose Deployment**: Deployment of multi-container applications
+- **System Monitoring**: Fetching and displaying system statistics
+
+See the [examples directory](./examples) for more information.
+
+## Environment Variables
+
+The library requires the following environment variables:
+
+- `PHALA_CLOUD_API_KEY`: Your API key for accessing the Phala Cloud services
+
+Optional environment variables that may be used by deployed applications:
+
+- `OPENAI_API_KEY`: For ELIZA deployments that use OpenAI's services
+- `ELIZA_PORT`: To specify a custom port for ELIZA services
+- `ELIZA_LOG_LEVEL`: To control logging verbosity in ELIZA services
+
+## Error Handling
+
+The library provides comprehensive error handling through the `Error` enum, which includes variants for different error scenarios:
+
+- `Error::Configuration`: Configuration-related errors
+- `Error::Api`: API-related errors with status code and message
+- `Error::HttpClient`: HTTP client errors
+- `Error::Crypto`: Cryptography-related errors
+- `Error::Serialization`: Serialization/deserialization errors
+
+## Advanced Usage
+
+### Custom Docker Compose Deployment
+
+```rust
+use phala_tee_deploy_rs::{Error, TeeDeployerBuilder};
 use std::collections::HashMap;
 
-// Create deployer with builder pattern
-let mut deployer = TeeDeployerBuilder::new()
-    .with_api_key(std::env::var("PHALA_CLOUD_API_KEY")?)
-    .build()?;
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    let api_key = std::env::var("PHALA_CLOUD_API_KEY").expect("API key is required");
+    let mut deployer = TeeDeployerBuilder::new().with_api_key(api_key).build()?;
 
-// Discover available TEEPod
-deployer.discover_teepod().await?;
+    // Custom Docker Compose configuration
+    let docker_compose = r#"
+    version: '3'
+    services:
+      web:
+        image: nginx:alpine
+        ports:
+          - "80:80"
+        volumes:
+          - ./html:/usr/share/nginx/html
+      db:
+        image: postgres:14
+        environment:
+          - POSTGRES_PASSWORD=password
+          - POSTGRES_USER=user
+          - POSTGRES_DB=mydb
+        volumes:
+          - db-data:/var/lib/postgresql/data
+    volumes:
+      db-data:
+    "#;
 
-// Option 1: Deploy from YAML string
-let yaml = r#"
-version: '3'
-services:
-  app:
-    image: nginx:latest
-    ports:
-      - "80:80"
-"#;
+    // Environment variables
+    let mut env_vars = HashMap::new();
+    env_vars.insert("POSTGRES_PASSWORD".to_string(), "secure_password".to_string());
 
-let result = deployer.deploy_compose_from_string(
-    yaml,
-    "my-app",
-    env_vars,
-    Some(1),    // vCPUs
-    Some(1024), // Memory (MB)
-    Some(10),   // Disk size (GB)
-).await?;
+    // Deploy the compose configuration
+    let result = deployer
+        .deploy_compose_from_string(
+            docker_compose,
+            "my-web-app",
+            env_vars,
+            Some(2),     // 2 CPUs
+            Some(2048),  // 2GB RAM
+            Some(20),    // 20GB disk
+        )
+        .await?;
 
-// Access the strongly typed response
-println!("Deployment ID: {}", result.id);
-println!("Deployment Status: {}", result.status);
-if let Some(details) = &result.details {
-    println!("TEEPod ID: {}", details.get("teepod_id").unwrap_or(&Value::Null));
+    println!("Deployment successful with ID: {}", result.id);
+
+    Ok(())
 }
-
-// Option 2: Deploy from dockworker ComposeConfig
-let mut compose_config = ComposeConfig::default();
-// ... configure services programmatically ...
-
-let result = deployer.deploy_compose(
-    &compose_config,
-    "my-app",
-    env_vars,
-    None, // Use default vCPUs
-    None, // Use default memory
-    None, // Use default disk size
-).await?;
-
-// Access the strongly typed response
-println!("Deployment ID: {}", result.id);
-println!("Deployment Status: {}", result.status);
 ```
 
-### Low-Level API with TeeClient
+## Contributing
 
-The following patterns use the `TeeClient` directly for more control over the deployment process.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-#### Pattern 1: Simple Deployment
+## License
 
-Deploy with a single function call. Best for straightforward applications where simplicity is key:
-
-```rust
-let config = DeploymentConfig::new(
-    std::env::var("PHALA_CLOUD_API_KEY")?,
-    docker_compose_content,
-    environment_variables,
-    std::env::var("PHALA_TEEPOD_ID")?.parse()?,
-    "phala-worker:latest".to_string(),
-);
-
-let client = TeeClient::new(config)?;
-let deployment = client.deploy().await?;
-println!("Deployed: {}", deployment.id);
-```
-
-#### Pattern 2: Step-by-Step Deployment
-
-For when you need full control over the deployment process:
-
-```rust
-// 1. Initialize client
-let client = TeeClient::new(minimal_config)?;
-
-// 2. Get available TEEPods
-let teepods = client.get_available_teepods().await?;
-let teepod_id = teepods.nodes[0].teepod_id;
-let image = &teepods.nodes[0].images[0].name;
-
-// 3. Prepare VM configuration (using JSON for flexibility)
-let vm_config = json!({
-    "name": "my-app",
-    "compose_manifest": {
-        "docker_compose_file": docker_compose,
-        "name": "my-app",
-        "features": ["kms", "tproxy-net"]
-    },
-    "vcpu": 2,
-    "memory": 8192,
-    "disk_size": 40,
-    "teepod_id": teepod_id,
-    "image": image,
-    "advanced_features": {
-        "tproxy": true,
-        "kms": true,
-        "public_sys_info": true,
-        "public_logs": true,
-        "docker_config": {
-            "username": "",
-            "password": "",
-            "registry": null
-        },
-        "listed": false
-    }
-});
-
-// 4. Get encryption keys
-let pubkey_response = client.get_pubkey_for_config(&vm_config).await?;
-
-// 5. Deploy with environment variables
-let deployment = client.deploy_with_config_do_encrypt(
-    vm_config,
-    &env_vars,
-    &pubkey_response.app_env_encrypt_pubkey,
-    &pubkey_response.app_id_salt
-).await?;
-
-// Access the strongly typed response
-println!("Deployment ID: {}", deployment.id);
-println!("Deployment Status: {}", deployment.status);
-```
-
-#### Pattern 3: Privilege Separation
-
-Security-focused approach where operators handle infrastructure while users manage secrets:
-
-```rust
-// OPERATOR: Has API access, doesn't see secrets
-// 1. Get available TEEPods
-let teepods = client.get_available_teepods().await?;
-
-// 2. Prepare VM configuration
-let vm_config = json!({ /* configuration */ });
-
-// 3. Get encryption key
-let pubkey = client.get_pubkey_for_config(&vm_config).await?;
-
-// 4. Send pubkey to user through secure channel
-send_to_user(pubkey);
-
-// 5. Receive encrypted variables from user
-let encrypted_env = receive_from_user();
-
-// 6. Deploy with encrypted environment
-client.deploy_with_config_encrypted_env(
-    vm_config, encrypted_env, pubkey
-).await?;
-
-// USER: Has secrets, doesn't need API access
-// 1. Receives pubkey from operator
-// 2. Encrypts environment variables
-let encrypted = Encryptor::encrypt_env_vars(&secrets, pubkey)?;
-// 3. Sends encrypted data to operator
-send_to_operator(encrypted);
-```
-
-#### Pattern 4: Updating Deployments
-
-Update existing deployments with new configurations or environment variables:
-
-```rust
-// 1. Get current configuration
-let compose = client.get_compose(&app_id).await?;
-
-// 2. Modify configuration and environment variables
-let mut compose_file = compose.compose_file;
-// Update compose file fields as needed...
-
-// 3. Apply update
-client.update_compose(
-    &app_id,
-    compose_file,
-    Some(new_env_vars),
-    compose.env_pubkey
-).await?;
-```
-
-#### Pattern 5: Getting Network Information
-
-Retrieve connectivity information and public URLs for accessing a deployed application:
-
-```rust
-// Retrieve network information using TeeClient
-let network_info = client.get_network_info(&app_id).await?;
-
-// Check if the app is online
-if network_info.is_online {
-    println!("Application is online!");
-
-    // Get the public URLs
-    println!("Application URL: {}", network_info.public_urls.app);
-    println!("Instance URL: {}", network_info.public_urls.instance);
-} else {
-    println!("Application is offline.");
-    if let Some(error) = network_info.error {
-        println!("Error: {}", error);
-    }
-}
-
-// Or using the higher-level TeeDeployer API
-let network_info = deployer.get_network_info(&app_id).await?;
-println!("You can access your application at: {}", network_info.public_urls.app);
-```
+This project is licensed under the MIT License - see the LICENSE file for details.

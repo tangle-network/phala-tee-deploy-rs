@@ -32,4 +32,4 @@ rustdoc-args = ["--cfg", "docsrs"]
 # Specify the default target
 default-target = "x86_64-unknown-linux-gnu"
 # Configure which platforms are included in the build matrix
-targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"] 
+targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
