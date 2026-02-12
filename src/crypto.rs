@@ -82,8 +82,6 @@ impl Encryptor {
         shared_secret_bytes: [u8; 32],
         iv: [u8; 12],
     ) -> Result<String, Error> {
-        println!("Encrypting environment variables with fixed components");
-
         // Decode remote public key (remove 0x prefix if present)
         let clean_pubkey = remote_pubkey_hex.trim_start_matches("0x");
         let remote_pubkey_bytes = hex::decode(clean_pubkey)
@@ -138,8 +136,6 @@ impl Encryptor {
         ephemeral_secret: EphemeralSecret,
         iv: [u8; 12],
     ) -> Result<String, Error> {
-        println!("Encrypting environment variables");
-
         // Decode remote public key (remove 0x prefix if present)
         let clean_pubkey = remote_pubkey_hex.trim_start_matches("0x");
         let remote_pubkey_bytes = hex::decode(clean_pubkey)

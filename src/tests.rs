@@ -25,14 +25,24 @@ fn create_test_config(api_url: String) -> DeploymentConfig {
 async fn test_successful_deployment_flow() {
     let mock_server = MockServer::start().await;
 
-    // Mock the pubkey endpoint with validation
+    // Mock the pubkey endpoint with a full PubkeyResponse body
     Mock::given(method("POST"))
         .and(path("/cvms/pubkey/from_cvm_configuration"))
         .and(header("Content-Type", "application/json"))
         .and(header("x-api-key", "test_api_key"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "app_env_encrypt_pubkey": format!("0x{}", hex::encode([1u8; 32])),
-            "app_id_salt": "test_salt"
+            "app_id": "app_1",
+            "app_id_salt": "test_salt",
+            "compose_manifest": { "name": "test", "features": [], "docker_compose_file": "" },
+            "disk_size": 10,
+            "encrypted_env": "",
+            "image": "test:latest",
+            "listed": false,
+            "memory": 1024,
+            "name": "test",
+            "teepod_id": 1,
+            "vcpu": 1
         })))
         .expect(1)
         .mount(&mock_server)
@@ -116,16 +126,33 @@ async fn test_get_available_teepods() {
         .and(header("Content-Type", "application/json"))
         .and(header("x-api-key", "test_api_key"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "capacity": { "max_disk": 100, "max_instances": 10, "max_memory": 65536, "max_vcpu": 16 },
+            "tier": "pro",
             "nodes": [
                 {
                     "teepod_id": 123,
+                    "listed": true,
+                    "name": "test-node",
+                    "remaining_cvm_slots": 5,
+                    "remaining_memory": 32768.0,
+                    "remaining_vcpu": 8.0,
+                    "resource_score": 0.8,
                     "images": [
                         {
                             "name": "test-image:latest",
-                            "tag": "latest"
+                            "bios": "bios.bin",
+                            "cmdline": "",
+                            "description": "test image",
+                            "hda": null,
+                            "initrd": "initrd.img",
+                            "is_dev": false,
+                            "kernel": "vmlinuz",
+                            "rootfs": "rootfs.img",
+                            "rootfs_hash": "abc123",
+                            "shared_ro": false,
+                            "version": [1, 0, 0]
                         }
-                    ],
-                    "status": "ready"
+                    ]
                 }
             ]
         })))
@@ -171,14 +198,24 @@ async fn test_get_available_teepods_error() {
 async fn test_get_pubkey_for_config() {
     let mock_server = MockServer::start().await;
 
-    // Mock the pubkey endpoint
+    // Mock the pubkey endpoint with a full PubkeyResponse body
     Mock::given(method("POST"))
         .and(path("/cvms/pubkey/from_cvm_configuration"))
         .and(header("Content-Type", "application/json"))
         .and(header("x-api-key", "test_api_key"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "app_env_encrypt_pubkey": format!("0x{}", hex::encode([1u8; 32])),
-            "app_id_salt": "test_salt"
+            "app_id": "app_1",
+            "app_id_salt": "test_salt",
+            "compose_manifest": { "name": "test", "features": [], "docker_compose_file": "" },
+            "disk_size": 10,
+            "encrypted_env": "",
+            "image": "test:latest",
+            "listed": false,
+            "memory": 1024,
+            "name": "test",
+            "teepod_id": 1,
+            "vcpu": 1
         })))
         .expect(1)
         .mount(&mock_server)
