@@ -522,3 +522,35 @@ pub struct SystemStatsResponse {
     /// Detailed system information
     pub sysinfo: SystemInfo,
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CVM lifecycle types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Full CVM info from `GET /api/v1/cvms/{cvm_id}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CvmInfo {
+    pub id: u64,
+    pub status: String,
+    pub name: String,
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
+}
+
+/// CVM state from `GET /api/v1/cvms/{cvm_id}/state`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CvmStateResponse {
+    pub status: String,
+    pub is_running: bool,
+}
+
+/// TEE attestation from `GET /api/v1/cvms/{cvm_id}/attestation`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttestationResponse {
+    #[serde(default)]
+    pub tcb_info: serde_json::Value,
+    #[serde(default)]
+    pub app_certificates: serde_json::Value,
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
+}

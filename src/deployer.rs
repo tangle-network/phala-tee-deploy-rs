@@ -1,8 +1,9 @@
 use crate::{
-    AdvancedFeatures, ComposeManifest, DeploymentConfig, DeploymentResponse, DockerConfig, Error,
-    NetworkInfoResponse, PubkeyResponse, Result, SystemStatsResponse, TeeClient,
-    TeePodDiscoveryResponse, VmConfig,
+    AdvancedFeatures, AttestationResponse, ComposeManifest, CvmInfo, CvmStateResponse,
+    DeploymentConfig, DeploymentResponse, DockerConfig, Error, NetworkInfoResponse, PubkeyResponse,
+    Result, SystemStatsResponse, TeeClient, TeePodDiscoveryResponse, VmConfig,
 };
+use std::time::Duration;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::Path;
@@ -113,32 +114,9 @@ impl TeeDeployer {
     /// * No TEEPods are available
     /// * The API response has an unexpected format
     pub async fn discover_teepod(&mut self) -> Result<TeePodDiscoveryResponse> {
-        eprintln!("🔍 Discovering available TEEPods...");
+        let teepods = self.client.get_available_teepods().await?;
 
-        let teepods = match self.client.get_available_teepods().await {
-            Ok(result) => result,
-            Err(err) => {
-                // Log error details for diagnosis
-                eprintln!("❌ Error connecting to TEEPod service: {}", err);
-                if let Error::Api {
-                    status_code,
-                    ref message,
-                } = err
-                {
-                    if status_code >= 500 {
-                        eprintln!("   Server error ({}): This may be a temporary issue with the Phala Cloud API", status_code);
-                        if message.contains("502") && message.contains("Bad Gateway") {
-                            eprintln!("   Cloudflare 502 Bad Gateway detected - the API server may be unreachable");
-                            eprintln!("   You may want to check your network connection or try again later");
-                        }
-                    }
-                }
-                return Err(err);
-            }
-        };
-
-        let nodes = teepods.nodes.clone();
-
+        let nodes = &teepods.nodes;
         if nodes.is_empty() {
             return Err(Error::Api {
                 status_code: 400,
@@ -147,15 +125,8 @@ impl TeeDeployer {
         }
 
         let node = &nodes[0];
-        let teepod_id = node.teepod_id;
-
         let image = node.images[0].name.clone();
-
-        eprintln!(
-            "✅ TEEPod discovered: ID {} with image {}",
-            teepod_id, image
-        );
-        self.selected_teepod = Some((teepod_id, image));
+        self.selected_teepod = Some((node.teepod_id, image));
         Ok(teepods)
     }
 
@@ -179,43 +150,16 @@ impl TeeDeployer {
     /// * The specified TEEPod is not found or not available
     /// * The API response has an unexpected format
     pub async fn select_teepod(&mut self, teepod_id: u64) -> Result<()> {
-        eprintln!("🔍 Selecting TEEPod with ID: {}", teepod_id);
+        let teepods = self.client.get_available_teepods().await?;
 
-        let teepods = match self.client.get_available_teepods().await {
-            Ok(result) => result,
-            Err(err) => {
-                // Log error details for diagnosis
-                eprintln!("❌ Error connecting to TEEPod service: {}", err);
-                if let Error::Api {
-                    status_code,
-                    ref message,
-                } = err
-                {
-                    if status_code >= 500 {
-                        eprintln!("   Server error ({}): This may be a temporary issue with the Phala Cloud API", status_code);
-                        if message.contains("502") && message.contains("Bad Gateway") {
-                            eprintln!("   Cloudflare 502 Bad Gateway detected - the API server may be unreachable");
-                            eprintln!("   You may want to check your network connection or try again later");
-                        }
-                    }
-                }
-                return Err(err);
-            }
-        };
-
-        let nodes = teepods.nodes.clone();
-
-        for node in nodes {
+        for node in &teepods.nodes {
             if node.teepod_id == teepod_id {
                 let image = node.images[0].name.clone();
-
-                eprintln!("✅ TEEPod selected: ID {} with image {}", teepod_id, image);
                 self.selected_teepod = Some((teepod_id, image));
                 return Ok(());
             }
         }
 
-        eprintln!("❌ TEEPod with ID {} not found or not available", teepod_id);
         Err(Error::Api {
             status_code: 404,
             message: format!("TEEPod with ID {} not found or not available", teepod_id),
@@ -644,8 +588,7 @@ impl TeeDeployer {
         self.client
             .get_pubkey_for_config(vm_config)
             .await
-            .map_err(|e| e)
-    }
+                }
 
     /// Deploys a VM configuration with pre-encrypted environment variables.
     ///
@@ -796,6 +739,56 @@ impl TeeDeployer {
     /// * The system statistics cannot be retrieved
     pub async fn get_system_stats(&self, app_id: &str) -> Result<SystemStatsResponse> {
         self.client.get_system_stats(app_id).await
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // CVM lifecycle
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Stop a CVM (force).
+    pub async fn stop(&self, app_id: &str) -> Result<CvmInfo> {
+        self.client.stop_cvm(app_id).await    }
+
+    /// Graceful shutdown of a CVM.
+    pub async fn shutdown(&self, app_id: &str) -> Result<CvmInfo> {
+        self.client.shutdown_cvm(app_id).await    }
+
+    /// Start a stopped CVM.
+    pub async fn start(&self, app_id: &str) -> Result<CvmInfo> {
+        self.client.start_cvm(app_id).await    }
+
+    /// Permanently delete a CVM.
+    pub async fn delete(&self, app_id: &str) -> Result<()> {
+        self.client.delete_cvm(app_id).await    }
+
+    /// Get TEE attestation for a CVM.
+    pub async fn get_attestation(&self, app_id: &str) -> Result<AttestationResponse> {
+        self.client.get_attestation(app_id).await    }
+
+    /// Get CVM state (running, stopped, etc.).
+    pub async fn get_status(&self, app_id: &str) -> Result<CvmStateResponse> {
+        self.client.get_state(app_id).await    }
+
+    /// Poll until the CVM reaches "running" state or the timeout expires.
+    pub async fn wait_until_running(&self, app_id: &str, timeout: Duration) -> Result<()> {
+        let start = std::time::Instant::now();
+        loop {
+            if start.elapsed() > timeout {
+                return Err(Error::Api {
+                    status_code: 408,
+                    message: format!(
+                        "CVM {} did not reach running state within {:?}",
+                        app_id, timeout
+                    ),
+                });
+            }
+            match self.client.get_state(app_id).await {
+                Ok(state) if state.is_running => return Ok(()),
+                Ok(_) => {}
+                Err(_) => {}
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
     }
 
     /// Returns a reference to the underlying `TeeClient` for direct access to lower-level operations.

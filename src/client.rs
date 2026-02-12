@@ -8,7 +8,8 @@ use crate::{
     crypto::Encryptor,
     error::Error,
     types::{
-        ComposeResponse, DeploymentResponse, NetworkInfoResponse, SystemStatsResponse, VmConfig,
+        AttestationResponse, ComposeResponse, CvmInfo, CvmStateResponse, DeploymentResponse,
+        NetworkInfoResponse, SystemStatsResponse, VmConfig,
     },
     PubkeyResponse, TeePodDiscoveryResponse,
 };
@@ -308,62 +309,23 @@ impl TeeClient {
     /// * The API returns an error response
     /// * The response cannot be parsed as valid JSON
     pub async fn get_available_teepods(&self) -> Result<TeePodDiscoveryResponse, Error> {
-        // Construct request URL
-        let request_url = format!("{}/teepods/available", self.config.api_url);
-
-        // Build request with explicit timeouts
-        let request = self
+        let response = self
             .client
-            .get(&request_url)
+            .get(format!("{}/teepods/available", self.config.api_url))
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.config.api_key)
-            .timeout(std::time::Duration::from_secs(15)); // Extend timeout for slow networks
+            .timeout(std::time::Duration::from_secs(15))
+            .send()
+            .await?;
 
-        // Log request and execute
-        eprintln!("Requesting TEEPods from: {}", request_url);
-
-        let response = match request.send().await {
-            Ok(resp) => resp,
-            Err(err) => {
-                let err_msg = format!("Network error while fetching TEEPods: {}", err);
-                eprintln!("{}", err_msg);
-
-                if err.is_timeout() {
-                    eprintln!("Request timed out - the server may be under high load or your network connection may be slow");
-                } else if err.is_connect() {
-                    eprintln!(
-                        "Connection error - please check your network connection and API endpoint"
-                    );
-                }
-
-                return Err(Error::HttpClient(err));
-            }
-        };
-
-        // Check response status
         if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unable to read error response".to_string());
-
-            eprintln!("API error (status {}): {}", status.as_u16(), error_text);
-
             return Err(Error::Api {
-                status_code: status.as_u16(),
-                message: error_text,
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
             });
         }
 
-        // Parse response
-        match response.json().await {
-            Ok(json) => Ok(json),
-            Err(err) => {
-                eprintln!("Failed to parse API response: {}", err);
-                Err(Error::HttpClient(err))
-            }
-        }
+        response.json().await.map_err(Error::HttpClient)
     }
 
     /// Retrieves the encryption public key for a custom VM configuration.
@@ -489,7 +451,6 @@ impl TeeClient {
             serde_json::Value::String(app_id_salt.to_string()),
         );
 
-        println!("request_body: {:#?}", request_body);
         // Create deployment
         let response = self
             .client
@@ -769,6 +730,169 @@ impl TeeClient {
 
         response
             .json::<SystemStatsResponse>()
+            .await
+            .map_err(Error::HttpClient)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // CVM lifecycle
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Get CVM details including status.
+    /// `GET /api/v1/cvms/{cvm_id}`
+    pub async fn get_cvm(&self, cvm_id: &str) -> Result<CvmInfo, Error> {
+        let response = self
+            .client
+            .get(format!("{}/cvms/{}", self.config.api_url, cvm_id))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api {
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
+            });
+        }
+
+        response.json::<CvmInfo>().await.map_err(Error::HttpClient)
+    }
+
+    /// Get CVM state (running, stopped, etc.).
+    /// `GET /api/v1/cvms/{cvm_id}/state`
+    pub async fn get_state(&self, cvm_id: &str) -> Result<CvmStateResponse, Error> {
+        let response = self
+            .client
+            .get(format!("{}/cvms/{}/state", self.config.api_url, cvm_id))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api {
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
+            });
+        }
+
+        response
+            .json::<CvmStateResponse>()
+            .await
+            .map_err(Error::HttpClient)
+    }
+
+    /// Start a stopped CVM.
+    /// `POST /api/v1/cvms/{cvm_id}/start`
+    pub async fn start_cvm(&self, cvm_id: &str) -> Result<CvmInfo, Error> {
+        let response = self
+            .client
+            .post(format!("{}/cvms/{}/start", self.config.api_url, cvm_id))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api {
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
+            });
+        }
+
+        response.json::<CvmInfo>().await.map_err(Error::HttpClient)
+    }
+
+    /// Graceful shutdown (SIGTERM, then SIGKILL after timeout).
+    /// `POST /api/v1/cvms/{cvm_id}/shutdown`
+    pub async fn shutdown_cvm(&self, cvm_id: &str) -> Result<CvmInfo, Error> {
+        let response = self
+            .client
+            .post(format!(
+                "{}/cvms/{}/shutdown",
+                self.config.api_url, cvm_id
+            ))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api {
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
+            });
+        }
+
+        response.json::<CvmInfo>().await.map_err(Error::HttpClient)
+    }
+
+    /// Force stop (immediate, like power loss).
+    /// `POST /api/v1/cvms/{cvm_id}/stop`
+    pub async fn stop_cvm(&self, cvm_id: &str) -> Result<CvmInfo, Error> {
+        let response = self
+            .client
+            .post(format!("{}/cvms/{}/stop", self.config.api_url, cvm_id))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api {
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
+            });
+        }
+
+        response.json::<CvmInfo>().await.map_err(Error::HttpClient)
+    }
+
+    /// Permanently delete a stopped CVM (irreversible).
+    /// `DELETE /api/v1/cvms/{cvm_id}`
+    pub async fn delete_cvm(&self, cvm_id: &str) -> Result<(), Error> {
+        let response = self
+            .client
+            .delete(format!("{}/cvms/{}", self.config.api_url, cvm_id))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api {
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Get TEE attestation data.
+    /// `GET /api/v1/cvms/{cvm_id}/attestation`
+    pub async fn get_attestation(&self, cvm_id: &str) -> Result<AttestationResponse, Error> {
+        let response = self
+            .client
+            .get(format!(
+                "{}/cvms/{}/attestation",
+                self.config.api_url, cvm_id
+            ))
+            .header("Content-Type", "application/json")
+            .header("x-api-key", &self.config.api_key)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api {
+                status_code: response.status().as_u16(),
+                message: response.text().await?,
+            });
+        }
+
+        response
+            .json::<AttestationResponse>()
             .await
             .map_err(Error::HttpClient)
     }

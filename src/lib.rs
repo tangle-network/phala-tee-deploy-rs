@@ -45,6 +45,7 @@
 //!         None,
 //!         None,
 //!         None,
+//!         None,
 //!     ).await?;
 //!
 //!     println!("Deployment successful: {:?}", result);
@@ -75,21 +76,22 @@
 //!         .build()?;
 //!
 //!     let teepods = deployer.discover_teepod().await?;
-//!     
+//!
 //!     // Create VM configuration
-//!     let vm_config = deployer.create_vm_config_from_string(
+//!     let vm_config = deployer.create_vm_config(
 //!         "version: '3'\nservices:\n  app:\n    image: nginx:alpine",
 //!         "secure-app",
 //!         None, None, None
 //!     )?;
-//!     
+//!
 //!     // Get encryption public key
-//!     let pubkey_response: PubkeyResponse = deployer.get_pubkey_for_config(&vm_config).await?;
+//!     let vm_config_value = serde_json::to_value(&vm_config).unwrap();
+//!     let pubkey_response: PubkeyResponse = deployer.get_pubkey_for_config(&vm_config_value).await?;
 //!     let pubkey = pubkey_response.app_env_encrypt_pubkey;
 //!     let salt = pubkey_response.app_id_salt;
-//!     
+//!
 //!     // Return VM config and encryption keys (to be sent to user)
-//!     Ok((vm_config, pubkey, salt))
+//!     Ok((vm_config_value, pubkey, salt))
 //! }
 //!
 //! // USER: Encrypt sensitive data
@@ -119,7 +121,7 @@
 //!
 //!     // Deploy with encrypted environment variables
 //!     let deployment = deployer.deploy_with_encrypted_env(
-//!         vm_config, encrypted_env, pubkey
+//!         vm_config, encrypted_env, &pubkey, &salt
 //!     ).await?;
 //!     
 //!     println!("Deployed successfully: {}", deployment.id);
