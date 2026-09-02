@@ -3,10 +3,10 @@ use crate::{
     DeploymentConfig, DeploymentResponse, DockerConfig, Error, NetworkInfoResponse, PubkeyResponse,
     Result, SystemStatsResponse, TeeClient, TeePodDiscoveryResponse, VmConfig,
 };
-use std::time::Duration;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Duration;
 
 /// `TeeDeployer` provides a high-level interface for deploying Docker Compose applications
 /// to the Phala TEE Cloud platform.
@@ -585,10 +585,8 @@ impl TeeDeployer {
     ///
     /// Returns an error if the API request fails
     pub async fn get_pubkey_for_config(&self, vm_config: &Value) -> Result<PubkeyResponse> {
-        self.client
-            .get_pubkey_for_config(vm_config)
-            .await
-                }
+        self.client.get_pubkey_for_config(vm_config).await
+    }
 
     /// Deploys a VM configuration with pre-encrypted environment variables.
     ///
@@ -747,27 +745,33 @@ impl TeeDeployer {
 
     /// Stop a CVM (force).
     pub async fn stop(&self, app_id: &str) -> Result<CvmInfo> {
-        self.client.stop_cvm(app_id).await    }
+        self.client.stop_cvm(app_id).await
+    }
 
     /// Graceful shutdown of a CVM.
     pub async fn shutdown(&self, app_id: &str) -> Result<CvmInfo> {
-        self.client.shutdown_cvm(app_id).await    }
+        self.client.shutdown_cvm(app_id).await
+    }
 
     /// Start a stopped CVM.
     pub async fn start(&self, app_id: &str) -> Result<CvmInfo> {
-        self.client.start_cvm(app_id).await    }
+        self.client.start_cvm(app_id).await
+    }
 
     /// Permanently delete a CVM.
     pub async fn delete(&self, app_id: &str) -> Result<()> {
-        self.client.delete_cvm(app_id).await    }
+        self.client.delete_cvm(app_id).await
+    }
 
     /// Get TEE attestation for a CVM.
     pub async fn get_attestation(&self, app_id: &str) -> Result<AttestationResponse> {
-        self.client.get_attestation(app_id).await    }
+        self.client.get_attestation(app_id).await
+    }
 
     /// Get CVM state (running, stopped, etc.).
     pub async fn get_status(&self, app_id: &str) -> Result<CvmStateResponse> {
-        self.client.get_state(app_id).await    }
+        self.client.get_state(app_id).await
+    }
 
     /// Poll until the CVM reaches "running" state or the timeout expires.
     pub async fn wait_until_running(&self, app_id: &str, timeout: Duration) -> Result<()> {

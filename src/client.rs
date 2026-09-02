@@ -809,10 +809,7 @@ impl TeeClient {
     pub async fn shutdown_cvm(&self, cvm_id: &str) -> Result<CvmInfo, Error> {
         let response = self
             .client
-            .post(format!(
-                "{}/cvms/{}/shutdown",
-                self.config.api_url, cvm_id
-            ))
+            .post(format!("{}/cvms/{}/shutdown", self.config.api_url, cvm_id))
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.config.api_key)
             .send()
